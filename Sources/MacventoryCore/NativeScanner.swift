@@ -12,6 +12,7 @@ public struct NativeScanner: SoftwareScanner {
     public func scan() async throws -> ScanResult {
         var items: [SoftwareItem] = [], errors: [String] = [], visited = Set<String>(), entries = 0
         var queue = (roots + (includeSystem ? ["/System/Applications", "/System/Library/CoreServices/Applications"] : [])).map { (FileSystem.canonical($0), 0) }
+        var linkedTargets = Set<String>()
         while !queue.isEmpty {
             try Task.checkCancellation()
             let (path, depth) = queue.removeFirst()
@@ -30,15 +31,16 @@ public struct NativeScanner: SoftwareScanner {
                     // macOS reports some symlinks (including Safari) as aliases too.
                     // Resolve actual symlinks before attempting Finder bookmark/alias resolution.
                     if values.isSymbolicLink == true {
-                        if url.pathExtension.lowercased() == "app" { queue.append((FileSystem.canonical(url.path), depth + 1)) }
+                        if url.pathExtension.lowercased() == "app" { linkedTargets.insert(FileSystem.canonical(url.path)); queue.append((FileSystem.canonical(url.path), depth + 1)) }
                     } else if values.isAliasFile == true {
-                        if let resolved = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]), resolved.pathExtension.lowercased() == "app" { queue.append((FileSystem.canonical(resolved.path), depth + 1)) }
+                        if let resolved = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]), resolved.pathExtension.lowercased() == "app" { linkedTargets.insert(FileSystem.canonical(resolved.path)); queue.append((FileSystem.canonical(resolved.path), depth + 1)) }
                     } else if values.isDirectory == true {
                         if url.pathExtension.lowercased() == "app" || depth < 4 { queue.append((FileSystem.canonical(url.path), depth + 1)) }
                     }
                 }
             } catch { errors.append("\(URL(fileURLWithPath: path).lastPathComponent): \(error.localizedDescription)") }
         }
+        for index in items.indices where linkedTargets.contains(items[index].path ?? "") { items[index].attributes["Linked discovery"] = "Symbolic link or Finder alias" }
         return ScanResult(source, items: items, state: errors.isEmpty ? nil : .failed, message: errors.joined(separator: "; "))
     }
     public static func item(at path: String) throws -> SoftwareItem {
@@ -50,6 +52,7 @@ public struct NativeScanner: SoftwareScanner {
         guard let info = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { throw ScanError.malformed("Invalid app Info.plist") }
         let name = info["CFBundleDisplayName"] as? String ?? info["CFBundleName"] as? String ?? URL(fileURLWithPath: canonical).deletingPathExtension().lastPathComponent
         var item = SoftwareItem(name: name, path: canonical, evidence: Evidence("Bundle Info.plist", confidence: .inferred, explanation: "No verified manager ownership yet; exact download origin is unknown"))
+        if canonical != URL(fileURLWithPath: path).standardizedFileURL.path { item.attributes["Linked discovery"] = "Symbolic link" }
         item.version = info["CFBundleShortVersionString"] as? String ?? info["CFBundleVersion"] as? String
         item.bundleID = info["CFBundleIdentifier"] as? String
         // Copyright text is not reliable publisher identity.

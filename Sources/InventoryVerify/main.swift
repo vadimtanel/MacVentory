@@ -1,9 +1,23 @@
 import Foundation
+import AppKit
 import MacventoryCore
 
 @main
 struct Verify {
     static func main() async throws {
+        // Read-only diagnostic: preparation and validation only, no executor exists here.
+        if let index = CommandLine.arguments.firstIndex(of: "--removal-preview"), CommandLine.arguments.indices.contains(index + 1) {
+            let path = CommandLine.arguments[index + 1]
+            let item = try NativeScanner.item(at: path)
+            let running = await MainActor.run { NSWorkspace.shared.runningApplications.contains { $0.bundleURL.map { FileSystem.canonical($0.path) } == item.path } }
+            print("Source: \(item.primarySource.title), \(item.confidence.rawValue); running: \(running)")
+            do {
+                let eligibility = try await StandaloneRemovalChecker().check(item)
+                let plan = UninstallPlanner.plan(for: item, running: running, standaloneEligibility: eligibility)
+                print("Read-only preview: \(plan.actionTitle); eligible: \(plan.canExecute); \(plan.explanation)")
+            } catch { print("Read-only preview: Move to Trash unavailable: " + error.localizedDescription) }
+            return
+        }
         let started = ContinuousClock.now
         var configuration = ScanConfiguration()
         configuration.showSystem = CommandLine.arguments.contains("--system")

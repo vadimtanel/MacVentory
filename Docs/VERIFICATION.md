@@ -1,8 +1,20 @@
-# Macventory 1.0.0 verification — 23 October 2026
+# Macventory 1.0.0 verification — 24 October 2026
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
-## VERIFIED
+## Current standalone removal pass — build 102
+
+- **91 tests / 12 suites pass**, including all 3 enabled read-only live integrations and 20 uninstall/standalone test methods. All prior safety tests remain; the inferred-source expectation now reflects independently established Trash eligibility. Parameterized cases cover service/provider markers. No real removal adapter is invoked.
+- Native optimized arm64 1.0.0/build102 built and launched. Actual isolated GUI verified inferred standalone details, disabled **Move to Trash** until checkbox acknowledgment, cancellation, new-plan reset, simulated success, read-only OK-only completion and OK dismissal. Synthetic target remains present. About/official artwork smoke checked; production success copy remains exact under unit test.
+- Kimi was inspected read-only: standard `/Applications` bundle, current-user ownership, APPL identity and executable, no symlink, no App Store/provider/service markers; not running at review. Its bundled share extension remains inside the bundle. Fresh manager/PKG audit passed and the read-only planner reports eligible **Move to Trash**, while its source remains **Direct / Unmanaged · Inferred**. No Kimi GUI confirmation or actual Trash request was performed.
+- Original block was the unconditional verified-source guard, followed by an eligibility attribute that discovery never sets. Independent eligibility replaces that unreachable ordinary-app path; it does not invent source provenance.
+- Native NSWorkspace recycle is implemented. Permission/result errors, external races and cancellation boundaries are documented in UNINSTALL.md. Actual Trash execution, Finder restoration and real permission dialogs remain deliberately unverified. Xcode/XCUITest and absent-provider live checks remain blocked/unverified as before.
+- Build102 app/ZIP/DMG signatures and executable/icon matches pass. ZIP demo launched with all ten fictional source categories and visible official toolbar art. DMG integrity and read-only mounted build102 contents pass; no new DMG GUI launch was performed. Source archive/manifest now contain exactly 87 inputs with matching hashes.
+- Detailed local logs and Kimi preview stay ignored under build/. Public screenshot set and original artwork remain unchanged. No real application/package was removed or modified; no user-data deletion or cache clearing was performed. No Git history/index/remote/publication changes.
+
+The build101 checks below are retained as historical evidence; the build102 section supersedes its standalone-support and test-count statements.
+
+## VERIFIED — prior build101 baseline
 
 - **83 tests in 11 suites pass**, with all 3 read-only live integration tests enabled and 12 non-destructive uninstall tests. Four new regression tests cover plan-bound checkbox reset/replacement, concurrency/duplicate protection, unsupported/protected previews and all appearance choices/serialized settings round-trip. Existing tests retained; no destructive executor invoked.
 - Actual native GUI: single-click selection/details; native double-click and Return open only a preview; headers do not open removal; right-click Copy Identifier/Reveal/Copy Path/Uninstall preserved. Eligible synthetic app starts unchecked with disabled Uninstall; checkbox enables it, Cancel closes without execution, reopening resets it, injected simulation reports success. Synthetic package and system component previews show identity/reason with disabled Uninstall. Two-window QA confirmed only the requesting window owns a preview and requests from the other window cannot duplicate it.
@@ -19,7 +31,7 @@
 
 ## IMPLEMENTED BUT UNVERIFIED
 
-Production source-specific uninstall adapters remain implemented but actual destructive execution unverified. Most ordinary scanned apps receive handoff guidance; standalone eligibility is not inferred. Absent MacPorts/Nix/Setapp/Steam/Toolbox and positive App Store provider environments remain fixture-only. Minimum-OS, clean-machine downloaded/quarantined launch, native column dragging/persistence, full keyboard/hover coverage remain pending. M1–M5 intended; only M4 Pro/macOS 27.0.1 runtime tested. Intel optional.
+Production source-specific uninstall adapters remain implemented but actual destructive execution unverified. Standalone removal now uses the separate checks described above; unsupported apps retain handoff guidance. Absent MacPorts/Nix/Setapp/Steam/Toolbox and positive App Store provider environments remain fixture-only. Minimum-OS, clean-machine downloaded/quarantined launch, native column dragging/persistence, full keyboard/hover coverage remain pending. M1–M5 intended; only M4 Pro/macOS 27.0.1 runtime tested. Intel optional.
 
 Full VoiceOver navigation was not performed: VoiceOver was not enabled/navigated. AX inspection is not VoiceOver verification. Updated XCUITest cases are prepared, not executed.
 
@@ -33,7 +45,7 @@ No bulk uninstall, automatic cleanup, elevated installer/helper, telemetry/backe
 
 ## Local artifacts
 
-`build/Macventory.app`; `artifacts/Macventory-1.0.0-arm64.zip`, `.dmg`, `.sha256`; `artifacts/Macventory-1.0.0-source.tar.gz`. Source archive/checksums refreshed after final documentation/screenshots; all 85 archive inputs/hashes match the reviewed publication manifest at handoff. Older 0.1.0 artifacts are archived privately, not represented as 1.0.0.
+`build/Macventory.app`; `artifacts/Macventory-1.0.0-arm64.zip`, `.dmg`, `.sha256`; `artifacts/Macventory-1.0.0-source.tar.gz`. Source archive/checksums refreshed after final documentation/screenshots; all 87 current archive inputs/hashes match the reviewed publication manifest at handoff. Older 0.1.0 artifacts are archived privately, not represented as 1.0.0.
 
 See [installation](INSTALLATION.md), [uninstall safety](UNINSTALL.md), [source matrix](SOURCE_SUPPORT.md), [publication review](PUBLICATION_REVIEW.md) and [Git plan](GIT_INTEGRATION.md).
 

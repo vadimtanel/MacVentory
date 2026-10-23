@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var uninstallPlan: UninstallPlan?
     @Published var uninstallMessage: String?
     @Published var uninstallWorking = false
+    @Published var uninstallPreparing = false
     @Published var uninstallOutcome: UninstallOutcome?
     @Published private(set) var configuration: ScanConfiguration
     private let service = InventoryService()
@@ -35,7 +36,7 @@ final class AppModel: ObservableObject {
         fixtureMode = runMode.isolated
         qaProtected = !runMode.allowsLiveRemoval
         let executor: any UninstallExecuting = qaProtected ? SimulatedUninstallExecutor() : LiveUninstallExecutor()
-        uninstallSession = UninstallSession(executor: executor)
+        uninstallSession = UninstallSession(executor: executor, validator: FreshUninstallValidator(standaloneChecker: fixtureMode ? SimulatedStandaloneChecker(roots: [Self.fixtureRoot.path]) : nil))
         configuration = fixtureMode ? ScanConfiguration() : (UserDefaults.standard.data(forKey: "configuration").flatMap { try? JSONDecoder().decode(ScanConfiguration.self, from: $0) }) ?? ScanConfiguration()
         cache = SnapshotStore(directory: fixtureMode ? FileManager.default.temporaryDirectory.appendingPathComponent("Macventory-Isolated-" + UUID().uuidString) : nil)
         if fixtureMode {
@@ -100,12 +101,32 @@ final class AppModel: ObservableObject {
         let running = NSWorkspace.shared.runningApplications.contains { $0.bundleURL.map { FileSystem.canonical($0.path) } == item.path }
         let plan = UninstallPlanner.plan(for: item, running: running)
         uninstallMessage = nil; uninstallOutcome = nil; uninstallPlan = plan
-        Task { await uninstallSession.prepare(plan) }
+        uninstallPreparing = true
+        uninstallTask = Task {
+            var failure: String?
+            var reviewed = plan
+            if item.primarySource == .unmanaged, item.sources.allSatisfy({ $0.source == .unmanaged }), !item.isSystem, !running {
+                do {
+                    let checker: any StandaloneRemovalChecking = fixtureMode ? SimulatedStandaloneChecker(roots: [Self.fixtureRoot.path]) : StandaloneRemovalChecker(configuration: configuration)
+                    let eligibility = try await checker.check(item)
+                    try Task.checkCancellation()
+                    reviewed = UninstallPlanner.plan(for: item, running: running, standaloneEligibility: eligibility)
+                } catch is CancellationError { return }
+                catch {
+                    failure = "Move to Trash unavailable: " + error.localizedDescription
+                }
+            }
+            guard !Task.isCancelled, uninstallPlan?.id == plan.id else { return }
+            uninstallPreparing = false; uninstallMessage = failure
+            uninstallPlan = reviewed
+            await uninstallSession.prepare(reviewed)
+        }
     }
     func cancelUninstall() {
         if uninstallWorking {
             uninstallTask?.cancel(); uninstallMessage = "Cancellation requested. An operation already started may have partially applied; refresh before retrying."
         } else {
+            uninstallTask?.cancel(); uninstallPreparing = false
             Task { await uninstallSession.cancel() }; uninstallPlan = nil; uninstallMessage = nil; uninstallOutcome = nil
         }
     }
@@ -191,14 +212,18 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    private static let fixtureRoot = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("Macventory-UIFixture-" + UUID().uuidString)
     static func fixtures() -> [SoftwareItem] {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Macventory-UIFixture-" + UUID().uuidString).appendingPathComponent("Example App.app/Contents")
+        let directory = fixtureRoot.appendingPathComponent("Example App.app/Contents")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let info: [String: String] = ["CFBundleName": "Example App", "CFBundleIdentifier": "org.example.app", "CFBundleShortVersionString": "1.2.3"]
+        let info: [String: String] = ["CFBundleName": "Example App", "CFBundleIdentifier": "org.example.app", "CFBundleShortVersionString": "1.2.3", "CFBundlePackageType": "APPL", "CFBundleExecutable": "Example"]
         if let data = try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0) { try? data.write(to: directory.appendingPathComponent("Info.plist")) }
         var app = SoftwareItem(name: "Example App", path: directory.deletingLastPathComponent().path)
-        app.sources = [.init(.unmanaged, Evidence("Synthetic QA fixture; not installed software"))]
-        app.attributes["Bundle-only removal"] = "Verified eligible"
+        app.sources = [.init(.unmanaged, Evidence("Synthetic QA fixture; not installed software", confidence: .inferred))]
+        let binary = directory.appendingPathComponent("MacOS/Example")
+        try? FileManager.default.createDirectory(at: binary.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data("Synthetic fixture; never executed".utf8).write(to: binary)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         app.version = "1.2.3"; app.bundleID = "org.example.app"; app.sizeBytes = 2_000_000_000
         app.lastOpenedAt = Date().addingTimeInterval(-200 * 86400)
         app.evidence["lastOpenedAt"] = Evidence("Fixture Spotlight", confidence: .inferred)

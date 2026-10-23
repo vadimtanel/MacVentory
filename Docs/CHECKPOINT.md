@@ -1,4 +1,4 @@
-# Macventory 1.0.0 checkpoint — 23 October 2026
+# Macventory 1.0.0 checkpoint — 24 October 2026
 
 ## Resumed changes
 
@@ -29,3 +29,22 @@ All 83 tests pass (11 suites, 3 live read-only integrations,12 uninstall tests (
 No UI/branding/source/test changes. Removed only root, Design and Sources .DS_Store metadata after signature/reference checks. Archived ten generated Resources/Macventory.iconset PNGs and ten unreferenced root QA logs under ignored build/cleanup-archive. Retained both original Design PNGs, approved ICNS/toolbar/installer derivatives, five public screenshots and all source/tests/docs/required scripts. No ambiguous build evidence deleted.
 
 Root-scoped iconset ignore added. Source packaging now uses the reviewed publication manifest rather than recursive folders, preventing ignored files from reentering source archives. 83 regression tests/11 suites pass; native app/ZIP/DMG rebuild passed with intermediate iconset absent. Small ZIP --demo GUI smoke passed; no repeated uninstall QA. Real settings/cache hashes unchanged. Final manifest 85 files (84 additions plus unchanged LICENSE), exact source-archive hashes/checksums verified. No regressions or Git mutations. See CLEANUP.md for full retention/removal evidence.
+
+## In progress — standalone Move to Trash
+
+Kimi's inferred source fails the verified-source guard; ordinary discovery also never sets the old manual eligibility attribute. Preserve inferred source attribution. Implement independent bundle/ownership eligibility, native NSWorkspace recycle, revalidation and simulation tests. Never invoke a live removal adapter or Trash installed software. Build101 UI completion/branding remain protected.
+
+
+## Current handoff — standalone Move to Trash, build 102
+
+Completed independent standalone eligibility (source attribution stays inferred), cancellable fresh eight-source ownership audit without cache/sizes, strict standard-root/current-owner/local-volume/permissions/metadata/executable/linked-path/service-component protections. PKG audit limits now fail closed. Native discovery retains symlink/alias evidence after canonicalization. Fingerprint binds bundle/executable/parent identities and metadata. Fresh validation repeats ownership and running checks; live adapter repeats validation and performs immediate main-queue identity/running checks before one native NSWorkspace recycle request. It requires a returned target mapping and has no permanent-delete/elevation/cleanup fallback.
+
+Operation-specific Move to Trash vs Homebrew Uninstall controls preserve checkbox/reset/single-use and exact OK-only completion. QA eligibility is explicitly labeled simulated and rejected by live recycling. Isolated fixture bundles live beside the built QA app (under ignored build), avoiding macOS /var symlink ancestors. Real inventory/cache/preferences are not used by fixture mode.
+
+91 tests / 12 suites pass, including 3 live read-only integrations and all prior removal safety tests. Final native build102 GUI verifies inferred fixture eligibility, checkbox gating, simulated success/OK-only/dismissal, reset and cancellation. About/icon smoke passes; synthetic bundle remains. Kimi read-only planner audit passes and offers Move to Trash while keeping inferred attribution; no real removal or real-app confirmation occurred. Detailed owner-specific evidence stays ignored under build/.
+
+README/SPEC/security/source matrix/UNINSTALL/verification updated. Xcode project regenerated/plist syntax valid. Local app/ZIP/DMG/source/checksum artifacts and exact publication manifest rebuilt for build102; 87 publication inputs (85 existing tracked files and 2 new files). No stage/commit/push/tag/publish or unrelated project edits. Full Xcode/XCUITest, actual destructive removal/Trash restoration, absent-manager live behavior and direct visual Dock inspection remain pending. Do not run live removal to resolve those gaps.
+
+Current repository HEAD inspected in this pass is 1cc7ac49d37ee1273eb6a649bb41456e633acbbf. The earlier LICENSE-only/55f7ea9 statements above describe historical handoffs; the current baseline already tracks 85 files. This execution made no commits or index changes.
+
+Final packaging checks: ZIP extraction, signature, build102/executable/ICNS matches and actual demo GUI pass. DMG integrity/read-only mount contents/signature/build102/icon checks pass; detached safely. Release executable has no developer home path. Manifest/link/privacy review passes with 87 inputs. Source archive/checksums regenerated after final docs. No new source changes after the passing 91-test run and native build.

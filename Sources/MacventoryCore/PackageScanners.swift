@@ -7,6 +7,7 @@ public struct PKGScanner: SoftwareScanner {
     public init(runner: any CommandRunning = ProcessRunner(), includeSystem: Bool = false) { self.runner = runner; self.includeSystem = includeSystem }
     public func scan() async throws -> ScanResult {
         let ids = String(decoding: try await runner.run(.receipts), as: UTF8.self).split(separator: "\n").map(String.init)
+        guard ids.count <= 3000 else { throw ScanError.limit("Receipt count exceeds audit limit") }
         var items: [SoftwareItem] = [], warnings: [String] = []
         for id in ids.prefix(3000) where includeSystem || !id.hasPrefix("com.apple.") {
             try Task.checkCancellation()
@@ -17,6 +18,7 @@ public struct PKGScanner: SoftwareScanner {
                 let location = info["install-location"] as? String ?? ""
                 let installRoot = URL(fileURLWithPath: volume).appendingPathComponent(location).path
                 let files = String(decoding: try await runner.run(.receiptFiles(id)), as: UTF8.self).split(separator: "\n")
+                guard files.count <= 100_000 else { throw ScanError.limit("Receipt payload exceeds audit limit") }
                 var apps = Set<String>(), existing = 0
                 for file in files.prefix(100_000) {
                     let candidate = URL(fileURLWithPath: installRoot).appendingPathComponent(String(file)).standardizedFileURL.path

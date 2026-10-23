@@ -57,6 +57,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertFalse(confirm.exists)
         app.buttons["inventory.uninstall"].click()
         XCTAssertFalse(app.textFields["uninstall.confirmName"].exists)
+        XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 3))
         app.checkBoxes["uninstall.acknowledge"].click()
         XCTAssertTrue(confirm.isEnabled)
         confirm.click()

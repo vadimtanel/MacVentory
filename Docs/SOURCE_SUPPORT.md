@@ -4,7 +4,7 @@ All ten categories exist in the UI, plus Unknown / Ambiguous. A zero result, abs
 
 | Source | Implementation / evidence | Actual verification and limits |
 |---|---|---|
-| Direct / Unmanaged | Bounded native bundle enumeration, canonical paths, bundle metadata | Real Mac comparison passed; exact DMG/ZIP/download provenance is unknown. System apps are hidden by default. |
+| Direct / Unmanaged | Bounded native bundle enumeration, canonical paths, bundle metadata | Real Mac comparison passed; exact DMG/ZIP/download provenance is unknown. System apps are hidden by default. Independent standalone Trash eligibility does not promote inferred source confidence; see uninstall boundaries. |
 | Mac App Store | Local receipt presence, explicitly inferred | Positive/negative fixtures; real scan returned no receipt-bearing apps. Receipt cryptography, purchase validity and account history are not verified. |
 | Homebrew Casks | Installed receipt artifact/config mapping to existing bundles | Real casks match read-only Homebrew listing and merge with native apps. Missing payloads are labeled receipt records; old/non-app receipt formats may be unsupported. |
 | Homebrew Formulae | Installed keg receipts, versions, linked/opt-linked state | Real names/kegs verified. Optional keg-only metadata is shown only when available; otherwise Unknown. No recipe evaluation or metadata download. |

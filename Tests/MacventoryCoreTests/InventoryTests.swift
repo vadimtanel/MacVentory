@@ -4,9 +4,13 @@ import Testing
 
 struct Sandbox {
     let root: URL
-    init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("MacventoryTests-" + UUID().uuidString)
+    init(directory: URL = FileManager.default.temporaryDirectory) throws {
+        root = directory.appendingPathComponent("MacventoryTests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+    // Avoid macOS's /var -> /private/var ancestor link in strict removal-policy fixtures.
+    static func removal() throws -> Sandbox {
+        try Sandbox(directory: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("build/RemovalFixtures"))
     }
     func write(_ relative: String, _ text: String) throws {
         let url = root.appendingPathComponent(relative)

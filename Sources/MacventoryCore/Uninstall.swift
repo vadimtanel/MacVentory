@@ -12,8 +12,11 @@ public struct UninstallPlan: Sendable, Identifiable {
     public let executable: String?
     public let arguments: [String]
     public let fingerprint: String?
+    let standaloneEligibility: StandaloneEligibility?
     public let createdAt: Date
     public var canExecute: Bool { method == .homebrewCask || method == .trashBundle }
+    public var actionTitle: String { method == .trashBundle ? "Move to Trash" : method == .homebrewCask ? "Homebrew Uninstall" : "Uninstall" }
+    public var acknowledgment: String { method == .trashBundle ? "I reviewed the application and want to move it to Trash." : "I reviewed the application and want to uninstall it." }
     public var operation: String {
         switch method {
         case .homebrewCask: "Remove only this app-only Homebrew cask; retain user data and dependencies."
@@ -24,9 +27,9 @@ public struct UninstallPlan: Sendable, Identifiable {
     }
 }
 public enum UninstallPlanner {
-    public static func plan(for item: SoftwareItem, running: Bool = false, now: Date = Date()) -> UninstallPlan {
+    public static func plan(for item: SoftwareItem, running: Bool = false, now: Date = Date(), standaloneEligibility: StandaloneEligibility? = nil) -> UninstallPlan {
         func result(_ method: UninstallMethod, _ reason: String, executable: String? = nil, arguments: [String] = [], fingerprint: String? = nil) -> UninstallPlan {
-            UninstallPlan(id: UUID(), item: item, method: method, explanation: reason, executable: executable, arguments: arguments, fingerprint: fingerprint, createdAt: now)
+            UninstallPlan(id: UUID(), item: item, method: method, explanation: reason, executable: executable, arguments: arguments, fingerprint: fingerprint, standaloneEligibility: standaloneEligibility, createdAt: now)
         }
         guard item.attributes["Demonstration"] != "Synthetic" else { return result(.blocked, "Demonstration records are never uninstall targets.") }
         guard !item.isSystem, item.bundleID?.hasPrefix("com.apple.") != true,
@@ -39,6 +42,13 @@ public enum UninstallPlanner {
         guard item.primarySource != .unknown, !item.sources.contains(where: { $0.source == .unknown }) else { return result(.blocked, "Ownership is ambiguous or incomplete.") }
         let managed = Set(item.sources.filter { [.homebrewCask, .homebrewFormula, .macPorts, .nix, .setapp, .steam, .toolbox].contains($0.source) }.map(\.source))
         guard managed.count <= 1 else { return result(.blocked, "Multiple managers claim this installation.") }
+        if item.primarySource == .unmanaged, item.sources.allSatisfy({ $0.source == .unmanaged }) {
+            guard let eligibility = standaloneEligibility else { return result(.external, "Checking standalone eligibility is required. Inferred source alone cannot authorize Trash.") }
+            do {
+                guard try StandaloneRemovalChecker.inspect(item, roots: eligibility.roots) == eligibility.fingerprint else { return result(.blocked, "The bundle changed. Prepare a new preview.") }
+                return result(.trashBundle, eligibility.simulated ? "Synthetic standalone fixture validated for simulation. No live ownership audit or installed software was used." : "Standalone bundle checks and a fresh ownership audit found no supported manager claim. Move only this bundle to recoverable Trash; this is not a complete uninstall.", fingerprint: eligibility.fingerprint)
+            } catch { return result(.blocked, error.localizedDescription) }
+        }
         guard item.confidence == .verified else { return result(.external, "The source is inferred, not verified. Removal must be reviewed in the vendor or source application; Macventory cannot safely select a mechanism.") }
         if item.primarySource == .homebrewCask {
             do {
@@ -58,10 +68,6 @@ public enum UninstallPlanner {
                 guard FileSystem.canonical(URL(fileURLWithPath: appdir).appendingPathComponent(apps[0]).path) == path else { return result(.blocked, "The cask no longer maps exactly to this application.") }
                 return result(.homebrewCask, "Verified installed receipt contains one app artifact and no executable removal hooks. No zap, force, cleanup or dependency removal.", executable: executable, arguments: ["uninstall", "--cask", "--", token], fingerprint: try fingerprint(item))
             } catch { return result(.blocked, "Cannot validate removal evidence: " + error.localizedDescription) }
-        }
-        if [.unmanaged, .appStore].contains(item.primarySource), item.sources.allSatisfy({ [.unmanaged, .appStore].contains($0.source) }), item.attributes["Bundle-only removal"] == "Verified eligible" {
-            do { return result(.trashBundle, "Explicit standalone eligibility established. Only this bundle is moved to recoverable Trash; no external files are touched.", fingerprint: try fingerprint(item)) }
-            catch { return result(.blocked, "Target identity could not be read.") }
         }
         let instructions: String
         switch item.primarySource {
@@ -108,11 +114,17 @@ public enum UninstallOutcome: String, Sendable {
 public protocol UninstallExecuting: Sendable { func execute(_ plan: UninstallPlan) async throws -> UninstallOutcome }
 public protocol UninstallValidating: Sendable { func validate(_ plan: UninstallPlan) async throws }
 public struct FreshUninstallValidator: UninstallValidating {
-    public init() {}
+    private let standaloneChecker: (any StandaloneRemovalChecking)?
+    public init(standaloneChecker: (any StandaloneRemovalChecking)? = nil) { self.standaloneChecker = standaloneChecker }
     public func validate(_ plan: UninstallPlan) async throws {
         try Task.checkCancellation()
-        let running = await MainActor.run { NSWorkspace.shared.runningApplications.contains { $0.bundleURL.map { FileSystem.canonical($0.path) } == plan.item.path } }
-        let fresh = UninstallPlanner.plan(for: plan.item, running: running)
+        var eligibility: StandaloneEligibility?
+        if plan.method == .trashBundle {
+            let checker = standaloneChecker ?? StandaloneRemovalChecker(configuration: plan.standaloneEligibility?.configuration ?? ScanConfiguration())
+            eligibility = try await checker.check(plan.item)
+        }
+        let running = await MainActor.run { NSWorkspace.shared.runningApplications.contains { $0.bundleURL.map { FileSystem.canonical($0.path) }.map { $0 == plan.item.path || $0.hasPrefix((plan.item.path ?? "") + "/") } == true } }
+        let fresh = UninstallPlanner.plan(for: plan.item, running: running, standaloneEligibility: eligibility)
         guard plan.canExecute, Date().timeIntervalSince(plan.createdAt) < 300,
               fresh.method == plan.method, fresh.arguments == plan.arguments, fresh.executable == plan.executable,
               fresh.fingerprint == plan.fingerprint else { throw ScanError.process("Application, ownership or removal plan changed. Refresh and prepare a new confirmation.") }
@@ -156,7 +168,9 @@ public struct LiveUninstallExecutor: UninstallExecuting {
         switch plan.method {
         case .trashBundle:
             guard let path = plan.item.path else { throw ScanError.process("Missing target") }
-            try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
+            // Recheck identity and running state on the same main-queue turn that submits
+            // the native operation; never permanently delete, retry, or sweep data.
+            try await Self.recycle(plan, path: path)
         case .homebrewCask:
             guard let executable = plan.executable, let token = plan.item.packageID,
                   UninstallPlanner.validToken(token), plan.arguments == ["uninstall", "--cask", "--", token] else { throw ScanError.process("Unexpected command") }
@@ -180,6 +194,24 @@ public struct LiveUninstallExecutor: UninstallExecuting {
         }
         return .completed
     }
+    @MainActor private static func recycle(_ plan: UninstallPlan, path: String) async throws {
+        try Task.checkCancellation()
+        guard let eligibility = plan.standaloneEligibility, !eligibility.simulated,
+              eligibility.roots == StandaloneRemovalChecker.standardRoots,
+              try StandaloneRemovalChecker.inspect(plan.item, roots: StandaloneRemovalChecker.standardRoots) == plan.fingerprint,
+              !NSWorkspace.shared.runningApplications.contains(where: { app in
+                  app.bundleURL.map { FileSystem.canonical($0.path) }.map { $0 == path || $0.hasPrefix(path + "/") } == true
+              }) else { throw ScanError.process("The target changed or is running. Prepare a new preview.") }
+        let url = URL(fileURLWithPath: path)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            NSWorkspace.shared.recycle([url]) { moved, error in
+                if let error { continuation.resume(throwing: ScanError.process("Move to Trash failed: " + error.localizedDescription + ". No automatic retry or cleanup was attempted.")) }
+                else if moved[url] == nil { continuation.resume(throwing: ScanError.process("Finder did not confirm moving this bundle to Trash. Refresh before retrying.")) }
+                else { continuation.resume() }
+            }
+        }
+    }
+
 }
 
 /// UI acknowledgment belongs to one immutable preview plan, never a reusable target name.

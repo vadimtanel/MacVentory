@@ -42,18 +42,19 @@ struct UninstallView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 320)
             if plan.canExecute {
-                Toggle("I reviewed the application and want to uninstall it.", isOn: $review.acknowledged)
+                Toggle(plan.acknowledgment, isOn: $review.acknowledged)
                     .accessibilityIdentifier("uninstall.acknowledge").controlHelp("Confirm only the application and operation shown in this preview")
                     .disabled(model.uninstallWorking || model.uninstallMessage != nil)
             }
-            if model.uninstallWorking { ProgressView("Uninstall in progress…").controlSize(.small) }
+            if model.uninstallPreparing { ProgressView("Checking standalone bundle and ownership…").controlSize(.small) }
+            if model.uninstallWorking { ProgressView(plan.actionTitle + " in progress…").controlSize(.small) }
             if let message = model.uninstallMessage { Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("uninstall.result") }
             HStack {
                 Button(model.uninstallWorking ? "Request cancellation" : "Cancel") { model.cancelUninstall() }.keyboardShortcut(.cancelAction).controlHelp("Close without starting removal; cancellation of an active operation is best effort")
                 Spacer()
-                Button("Uninstall", role: .destructive) { model.confirmUninstall(plan, acknowledged: review.acknowledged) }
-                    .disabled(!plan.canExecute || !review.acknowledged || review.planID != plan.id || model.uninstallWorking || model.uninstallMessage != nil)
-                    .accessibilityIdentifier("uninstall.confirm").controlHelp(model.qaProtected ? "Simulate only; no installed software will be changed" : "Revalidate this exact plan and uninstall the reviewed application")
+                Button(plan.actionTitle, role: .destructive) { model.confirmUninstall(plan, acknowledged: review.acknowledged) }
+                    .disabled(!plan.canExecute || !review.acknowledged || review.planID != plan.id || model.uninstallPreparing || model.uninstallWorking || model.uninstallMessage != nil)
+                    .accessibilityIdentifier("uninstall.confirm").controlHelp(model.qaProtected ? "Simulate only; no installed software will be changed" : "Revalidate this exact application and reviewed operation")
             }
             }
         }.padding(24).frame(width: 570)

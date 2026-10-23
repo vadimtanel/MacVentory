@@ -495,3 +495,8 @@ Native row primary action: single-click selects/details; double-click or Return 
 All Settings changes, including Appearance, apply only on Done. No visual preview. Cancel/Escape/window closure discard all drafts. Display-only changes never rescan; discovery-input changes batch into one refresh.
 
 Version1.0.0/build100 comes from Resources/Info.plist. Primary arm64 DMG/ZIP are self-contained and installable by ordinary copy; use a two-icon visual DMG with an Applications link. Free/ad-hoc signing is intentional. Paid membership/Developer ID/notarization are not requirements; document supported user-initiated Gatekeeper exceptions without automation/protection bypasses. Preserve all prior read-only scanning and simulation-only QA restrictions. No commit/tag/push/release/settings change without owner approval.
+
+
+## 26. Standalone bundle removal — build 102 clarification
+
+Keep inferred Direct / Unmanaged attribution. Independently assess scoped **Move to Trash** eligibility for current-user-owned, non-linked bundles directly in standard Applications folders. Require complete fresh supported-manager/PKG ownership checks, valid local bundle identity, permissions, no protected/system/service components, stopped application, explicit plan-bound checkbox confirmation and immediate revalidation. Use native NSWorkspace recycle only; distinguish its action from **Homebrew Uninstall**. Never permanently delete, sweep user data/dependencies, request elevation or fall back to shell removal. App Store and ambiguous/unsupported targets retain guidance. Preserve final two-line successful completion and OK-only state. QA uses synthetic bundles and mock executors exclusively; real destructive verification is forbidden in this execution.

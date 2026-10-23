@@ -18,7 +18,7 @@ private struct RejectValidation: UninstallValidating {
 private struct SlowValidation: UninstallValidating {
     func validate(_ plan: UninstallPlan) async throws {
         try await Task.sleep(for: .milliseconds(100))
-        try await FreshUninstallValidator().validate(plan)
+        try await FreshUninstallValidator(standaloneChecker: SimulatedStandaloneChecker(roots: [URL(fileURLWithPath: plan.item.path!).deletingLastPathComponent().path])).validate(plan)
     }
 }
 @Suite("Non-destructive uninstall planning and simulation")
@@ -26,16 +26,29 @@ struct UninstallTests {
     private func standalone(_ box: Sandbox) throws -> SoftwareItem {
         var item = try NativeScanner.item(at: box.app())
         item.sources = [.init(.unmanaged, Evidence("Synthetic verified fixture"))]
-        item.attributes["Bundle-only removal"] = "Verified eligible"
+        let infoURL = URL(fileURLWithPath: item.path! + "/Contents/Info.plist")
+        var info = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoURL), format: nil) as! [String: Any]
+        info["CFBundleExecutable"] = "Example"
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: infoURL)
+        try box.write("Example.app/Contents/MacOS/Example", "Synthetic fixture, never executed")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: item.path! + "/Contents/MacOS/Example")
         return item
     }
+    private func reviewPlan(for item: SoftwareItem, running: Bool = false) -> UninstallPlan {
+        let roots = [URL(fileURLWithPath: item.path ?? "/").deletingLastPathComponent().path]
+        let eligibility = (try? StandaloneRemovalChecker.inspect(item, roots: roots)).map { StandaloneEligibility(fingerprint: $0, configuration: ScanConfiguration(), roots: roots) }
+        return UninstallPlanner.plan(for: item, running: running, standaloneEligibility: eligibility)
+    }
+    private func validator(_ item: SoftwareItem) -> FreshUninstallValidator {
+        FreshUninstallValidator(standaloneChecker: SimulatedStandaloneChecker(roots: [URL(fileURLWithPath: item.path!).deletingLastPathComponent().path]))
+    }
     @Test func confirmationAndSimulationLeaveTargetUntouched() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
         let before = try UninstallPlanner.fingerprint(item)
-        let plan = UninstallPlanner.plan(for: item)
+        let plan = reviewPlan(for: item)
         #expect(plan.method == .trashBundle)
-        let session = UninstallSession(executor: recorder)
+        let session = UninstallSession(executor: recorder, validator: validator(item))
         await session.prepare(plan)
         await #expect(throws: (any Error).self) { try await session.confirm(id: plan.id, acknowledged: false) }
         #expect(await recorder.calls == 0)
@@ -46,55 +59,55 @@ struct UninstallTests {
         #expect(await recorder.calls == 1)
     }
     @Test func cancelBeforeConfirmationNeverExecutes() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
-        let plan = UninstallPlanner.plan(for: item), session = UninstallSession(executor: recorder)
+        let plan = reviewPlan(for: item), session = UninstallSession(executor: recorder, validator: validator(item))
         await session.prepare(plan); await session.cancel()
         await #expect(throws: (any Error).self) { try await session.confirm(id: plan.id, acknowledged: true) }
         #expect(await recorder.calls == 0)
     }
     @Test func changedTargetCannotUseOldConfirmation() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
-        let plan = UninstallPlanner.plan(for: item), session = UninstallSession(executor: recorder)
+        let plan = reviewPlan(for: item), session = UninstallSession(executor: recorder, validator: validator(item))
         await session.prepare(plan)
         _ = try box.app(name: "Changed synthetic fixture")
         await #expect(throws: (any Error).self) { try await session.confirm(id: plan.id, acknowledged: true) }
         #expect(await recorder.calls == 0)
     }
     @Test func permissionsAndExecutionFailuresAreSimulated() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval(fail: true)
-        let plan = UninstallPlanner.plan(for: item)
+        let plan = reviewPlan(for: item)
         let denied = UninstallSession(executor: recorder, validator: RejectValidation())
         await denied.prepare(plan)
         await #expect(throws: (any Error).self) { try await denied.confirm(id: plan.id, acknowledged: true) }
         #expect(await recorder.calls == 0)
-        let failed = UninstallSession(executor: recorder)
+        let failed = UninstallSession(executor: recorder, validator: validator(item))
         await failed.prepare(plan)
         await #expect(throws: (any Error).self) { try await failed.confirm(id: plan.id, acknowledged: true) }
         #expect(await recorder.calls == 1)
         #expect(FileSystem.exists(item.path!))
     }
     @Test func protectsSystemRunningStaleAndUncertainApplications() throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         var item = try standalone(box)
-        #expect(UninstallPlanner.plan(for: item, running: true).method == .blocked)
-        item.isSystem = true; #expect(!UninstallPlanner.plan(for: item).canExecute)
-        item.isSystem = false; item.stale = true; #expect(!UninstallPlanner.plan(for: item).canExecute)
+        #expect(reviewPlan(for: item, running: true).method == .blocked)
+        item.isSystem = true; #expect(!reviewPlan(for: item).canExecute)
+        item.isSystem = false; item.stale = true; #expect(!reviewPlan(for: item).canExecute)
         item.stale = false; item.sources = [.init(.unmanaged, Evidence("Inferred", confidence: .inferred))]
-        #expect(UninstallPlanner.plan(for: item).method == .external)
-        item.primarySource = .unknown; #expect(UninstallPlanner.plan(for: item).method == .blocked)
+        #expect(reviewPlan(for: item).method == .trashBundle)
+        item.primarySource = .unknown; #expect(reviewPlan(for: item).method == .blocked)
     }
     @Test func receiptsAndOtherManagersNeverBecomeBundleDeletion() throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         for source in [InstallSource.pkg, .steam, .setapp, .toolbox, .macPorts, .nix, .homebrewFormula] {
             var item = try standalone(box); item.primarySource = source; item.sources = [.init(source, Evidence("Fixture"))]
-            #expect(UninstallPlanner.plan(for: item).method == .external)
+            #expect(reviewPlan(for: item).method == .external)
         }
     }
     @Test func safeCaskPlansOnlyExactTokenWithoutCleanup() throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let path = try box.app("Applications/Example.app")
         let receipt = "Caskroom/example/.metadata"
         try box.write(receipt + "/INSTALL_RECEIPT.json", "{\"uninstall_artifacts\":[{\"app\":[\"Example.app\"]},{\"zap\":[{\"trash\":\"ignored user data\"}]}]}")
@@ -107,25 +120,25 @@ struct UninstallTests {
         item.sources = [.init(.homebrewCask, Evidence("Fixture receipt"))]
         item.attributes["Homebrew receipt"] = box.root.appendingPathComponent(receipt + "/INSTALL_RECEIPT.json").path
         item.attributes["Homebrew executable"] = box.root.appendingPathComponent("bin/brew").path
-        let plan = UninstallPlanner.plan(for: item)
+        let plan = reviewPlan(for: item)
         #expect(plan.method == .homebrewCask)
         #expect(plan.arguments == ["uninstall", "--cask", "--", "example"])
         try box.write(receipt + "/INSTALL_RECEIPT.json", "{\"uninstall_flight_blocks\":[\"unknown hook\"],\"uninstall_artifacts\":[{\"app\":[\"Example.app\"]}]}")
-        #expect(UninstallPlanner.plan(for: item).method == .external)
+        #expect(reviewPlan(for: item).method == .external)
         #expect(!plan.arguments.contains("--zap")); #expect(!plan.arguments.contains("--force"))
         try box.write(receipt + "/INSTALL_RECEIPT.json", "{\"uninstall_artifacts\":[{\"app\":[\"Example.app\"]},{\"uninstall\":[{\"script\":\"forbidden\"}]}]}")
-        #expect(UninstallPlanner.plan(for: item).method == .external)
+        #expect(reviewPlan(for: item).method == .external)
     }
     @Test func checkboxResetsForEveryPlanAndCannotAuthorizeAnotherTarget() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
-        let first = UninstallPlanner.plan(for: item), replacement = UninstallPlanner.plan(for: item)
+        let first = reviewPlan(for: item), replacement = reviewPlan(for: item)
         var review = UninstallReviewState(planID: first.id)
         #expect(!review.acknowledged)
         review.acknowledged = true
         review.reset(for: replacement.id)
         #expect(!review.acknowledged && review.planID == replacement.id)
-        let session = UninstallSession(executor: recorder)
+        let session = UninstallSession(executor: recorder, validator: validator(item))
         await session.prepare(first); await session.prepare(replacement)
         await #expect(throws: (any Error).self) { try await session.confirm(id: first.id, acknowledged: true) }
         #expect(await recorder.calls == 0)
@@ -133,9 +146,9 @@ struct UninstallTests {
         #expect(await recorder.calls == 1)
     }
     @Test func duplicateRequestsDuringValidationCannotExecuteTwice() async throws {
-        let box = try Sandbox(); defer { box.clean() }
+        let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
-        let plan = UninstallPlanner.plan(for: item), replacement = UninstallPlanner.plan(for: item)
+        let plan = reviewPlan(for: item), replacement = reviewPlan(for: item)
         let session = UninstallSession(executor: recorder, validator: SlowValidation())
         await session.prepare(plan)
         async let result = session.confirm(id: plan.id, acknowledged: true)
@@ -147,12 +160,13 @@ struct UninstallTests {
         #expect(await recorder.calls == 1)
     }
     @Test func unsupportedAndProtectedPreviewsNeverExecute() async throws {
-        let box = try Sandbox(); defer { box.clean() }
-        let recorder = RecordingRemoval(), session = UninstallSession(executor: recorder)
+        let box = try Sandbox.removal(); defer { box.clean() }
+        let recorder = RecordingRemoval()
         var item = try standalone(box)
+        let session = UninstallSession(executor: recorder, validator: validator(item))
         for kind in [SoftwareKind.package, .app] {
             item.kind = kind; item.isSystem = kind == .app
-            let plan = UninstallPlanner.plan(for: item)
+            let plan = reviewPlan(for: item)
             #expect(!plan.canExecute && !plan.explanation.isEmpty)
             await session.prepare(plan)
             await #expect(throws: (any Error).self) { try await session.confirm(id: plan.id, acknowledged: true) }
