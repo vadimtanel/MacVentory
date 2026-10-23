@@ -2,12 +2,45 @@ import XCTest
 
 @MainActor
 final class MacventoryUITests: XCTestCase {
-    private func clickVisible(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(element.waitForExistence(timeout: 5), file: file, line: line)
-        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed,
-                       "The actual control must be hittable; no coordinate fallback", file: file, line: line)
-        element.click()
+    private func clickVisible(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) throws {
+        let target = try XCTUnwrap(element.waitForExistence(timeout: 5) ? element : nil,
+                                  "The control must exist before clicking", file: file, line: line)
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: target)
+        let result = XCTWaiter.wait(for: [visible], timeout: 5)
+        if result != .completed {
+            let attachment = XCTAttachment(string: target.debugDescription)
+            attachment.name = "Control failed hittability precondition"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        // XCTUnwrap records an assertion failure and throws, stopping the caller's
+        // test as well as this helper. Never attempt a click after a failed guard.
+        _ = try XCTUnwrap(result == .completed ? target : nil,
+                          "The actual control must be hittable; no coordinate fallback", file: file, line: line)
+        target.click()
+    }
+
+    private func recordHeaderState(_ app: XCUIApplication, phase: String) {
+        XCTContext.runActivity(named: "Native header state: " + phase) { activity in
+            let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+            var lines = ["Phase: " + phase, "Window: " + app.windows.firstMatch.debugDescription]
+            for title in ["Name", "Version", "Source", "Size", "Installed", "Last Opened"] {
+                let header = table.buttons[title]
+                lines.append("\(title): exists=\(header.exists)" +
+                             (header.exists ? " frame=\(header.frame) hittable=\(header.isHittable) value=\(String(describing: header.value))" : ""))
+            }
+            // Include ancestors, sibling overlays, scroll containers and Details,
+            // not just the isolated header snapshot retained by the failed click.
+            lines.append(app.debugDescription)
+            let tree = XCTAttachment(string: lines.joined(separator: "\n"))
+            tree.name = phase + " — header geometry and full accessibility tree"
+            tree.lifetime = .keepAlways
+            activity.add(tree)
+            let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screen.name = phase + " — screen"
+            screen.lifetime = .keepAlways
+            activity.add(screen)
+        }
     }
 
     private func inventoryTable(_ app: XCUIApplication) -> XCUIElement {
@@ -74,12 +107,12 @@ final class MacventoryUITests: XCTestCase {
         app.buttons["inventory.cancel"].click()
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
     }
-    func testKeyboardRefreshAndSettings() {
+    func testKeyboardRefreshAndSettings() throws {
         let app = launch()
         app.typeKey("r", modifierFlags: .command)
         XCTAssertTrue(app.buttons["inventory.cancel"].waitForExistence(timeout: 1))
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         XCTAssertTrue(app.checkBoxes["Show system applications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.popUpButtons.firstMatch.exists)
     }
@@ -106,7 +139,7 @@ final class MacventoryUITests: XCTestCase {
         app.buttons["uninstall.ok"].click()
         XCTAssertFalse(app.buttons["uninstall.ok"].exists)
     }
-    func testNativeRowPrimaryActionAndProtectedPreview() {
+    func testNativeRowPrimaryActionAndProtectedPreview() throws {
         let app = launch()
         let row = inventoryTable(app).staticTexts["Example App"].firstMatch
         row.click()
@@ -129,7 +162,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.menuItems["Copy Identifier"].exists)
         XCTAssertTrue(app.menuItems["Uninstall…"].exists)
         app.typeKey(.escape, modifierFlags: [])
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         app.checkBoxes["Show system applications"].click()
         closeSettings(app, save: true)
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
@@ -138,11 +171,11 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertFalse(confirm.isEnabled)
     }
 
-    func testColumnVisibilityMenu() {
+    func testColumnVisibilityMenu() throws {
         let app = launch()
         if #available(macOS 14, *) {
             XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
-            clickVisible(app.buttons["inventory.columns"])
+            try clickVisible(app.buttons["inventory.columns"])
             XCTAssertTrue(app.checkBoxes["Version"].firstMatch.exists)
             app.checkBoxes["Version"].firstMatch.click()
             XCTAssertFalse(inventoryTable(app).buttons["Version"].exists)
@@ -150,27 +183,44 @@ final class MacventoryUITests: XCTestCase {
             XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
         }
     }
-    func testAllNativeHeaderSortsPreserveSelection() {
+    func testAllNativeHeaderSortsPreserveSelection() throws {
         let app = launch()
         let table = inventoryTable(app)
+        recordHeaderState(app, phase: "before selection")
         table.staticTexts["Example App"].firstMatch.click()
+        XCTAssertTrue(app.buttons["Copy Identifier"].waitForExistence(timeout: 3))
+        recordHeaderState(app, phase: "after selection and Details")
         for title in ["Version", "Source", "Size", "Installed", "Last Opened", "Name"] {
             let header = table.buttons[title]
             XCTAssertTrue(header.exists)
-            clickVisible(header)
+            try clickVisible(header)
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
-            clickVisible(header)
+            XCTAssertTrue(app.staticTexts["org.example.app"].exists)
+            if title == "Version" || title == "Source" {
+                let firstName = title == "Version" ? "example-tool" : "Example App"
+                XCTAssertTrue(table.children(matching: .outlineRow).element(boundBy: 0).staticTexts[firstName].exists,
+                              "The first native row must reflect ascending " + title + " sorting")
+            }
+            recordHeaderState(app, phase: title + " ascending")
+            try clickVisible(header)
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
+            XCTAssertTrue(app.staticTexts["org.example.app"].exists)
+            if title == "Version" || title == "Source" {
+                let firstName = title == "Version" ? "Example App" : "example-tool"
+                XCTAssertTrue(table.children(matching: .outlineRow).element(boundBy: 0).staticTexts[firstName].exists,
+                              "The first native row must reflect descending " + title + " sorting")
+            }
+            recordHeaderState(app, phase: title + " descending")
         }
         let search = app.searchFields.firstMatch
         search.click(); search.typeText("Example")
-        clickVisible(table.buttons["Size"])
+        try clickVisible(table.buttons["Size"])
         XCTAssertTrue(table.staticTexts["Example App"].firstMatch.exists)
     }
 
-    func testSettingsPagesThresholdInputAndAboutLinks() {
+    func testSettingsPagesThresholdInputAndAboutLinks() throws {
         let app = launch()
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let days = app.textFields["Recently installed threshold"]
         XCTAssertTrue(days.waitForExistence(timeout: 3))
@@ -181,11 +231,11 @@ final class MacventoryUITests: XCTestCase {
         app.radioButtons["Information"].click()
         XCTAssertTrue(app.buttons["Export Sanitized Diagnostics…"].exists)
         closeSettings(app, save: true)
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "28")
         closeSettings(app)
-        clickVisible(app.buttons["inventory.about"])
+        try clickVisible(app.buttons["inventory.about"])
         let about = app.windows["About Macventory"]
         XCTAssertTrue(about.waitForExistence(timeout: 3), "About must open after Settings closes")
         XCTAssertTrue(about.links["LinkedIn"].waitForExistence(timeout: 3))
@@ -193,9 +243,9 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(about.links["Macventory Repository"].exists)
     }
 
-    func testCancelDiscardsDraftAcrossPages() {
+    func testCancelDiscardsDraftAcrossPages() throws {
         let app = launch()
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let field = app.textFields["Recently installed threshold"]
         XCTAssertTrue(field.waitForExistence(timeout: 3))
@@ -205,7 +255,7 @@ final class MacventoryUITests: XCTestCase {
         app.radioButtons["Scanning"].click()
         XCTAssertTrue(app.textFields["Homebrew prefixes"].exists)
         closeSettings(app)
-        clickVisible(app.buttons["inventory.settings"])
+        try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "30")
     }

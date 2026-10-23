@@ -42,6 +42,9 @@ struct HeaderSortTests {
         a.primarySource = .homebrewCask; b.primarySource = .unmanaged
         let expected = [a,b].sorted { $0.primarySource.title.localizedStandardCompare($1.primarySource.title) == .orderedAscending }.map(\.id)
         #expect(InventorySort.sorted([b,a], by: .source).map(\.id) == expected)
+        #expect(InventorySort.sorted([b,a], by: .source, descending: true).map(\.id) == Array(expected.reversed()))
+        let sourceHeader = InventoryComparator.headerSelection(InventoryComparator(.source, order: .reverse), after: InventoryComparator(.version, order: .reverse))
+        #expect(sourceHeader.key == .source && sourceHeader.order == .forward)
     }
     @Test func filteringAndSortingPreserveInstallationSelectionIdentity() {
         var a = item("selected", version: "2.0", size: 200), b = item("other", version: "1.0", size: 100), c = item("excluded", size: 50)
