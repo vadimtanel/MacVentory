@@ -3,6 +3,12 @@ import AppKit
 import MacventoryCore
 
 struct SettingsView: View {
+    // Reserve space for window chrome and sheet attachment above the usable display.
+    // On compact screens a fixed 680-point sheet puts Done/Cancel behind the Dock.
+    static var presentationHeight: CGFloat {
+        min(680, max(560, (NSScreen.main?.visibleFrame.height ?? 780) - 100))
+    }
+
     @EnvironmentObject private var model: AppModel
     var onClose: (() -> Void)? = nil
     @State private var selectedTab = 0
@@ -31,8 +37,8 @@ struct SettingsView: View {
             HStack {
                 if let validationError { Text(validationError).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("settings.validation") }
                 Spacer()
-                Button("Cancel") { finish(commit: false) }.keyboardShortcut(.cancelAction).controlHelp("Discard pending settings changes")
-                Button("Done") { finish(commit: true) }.keyboardShortcut(.defaultAction).controlHelp("Validate and save settings; scan once if discovery locations changed")
+                Button("Cancel") { finish(commit: false) }.accessibilityIdentifier("settings.cancel").keyboardShortcut(.cancelAction).controlHelp("Discard pending settings changes")
+                Button("Done") { finish(commit: true) }.accessibilityIdentifier("settings.done").keyboardShortcut(.defaultAction).controlHelp("Validate and save settings; scan once if discovery locations changed")
             }.padding(16)
         }.frame(minWidth: 700, minHeight: 560, alignment: .top)
             .preferredColorScheme(model.configuration.appearance == "dark" ? .dark : model.configuration.appearance == "light" ? .light : nil)

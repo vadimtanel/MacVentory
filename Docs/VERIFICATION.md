@@ -2,6 +2,10 @@
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
+## Confirmed cloud native pass; GUI runtime corrections pending
+
+[Run 40028914665](https://github.com/vadimtanel/MacVentory/actions/runs/40028914665) passed SwiftPM, Xcode application/test compilation, Xcode unit tests, arm64 packaging and artifact validation. The GUI suite actually executed 10 tests with 11 failure records. Full logs and xcresult accessibility/video evidence identify incorrect table/toggle roles and a compact-screen settings sheet whose footer is covered by the Dock. Local corrections preserve all tests and strengthen transition assertions. Local build/fixture tests pass; the corrected GUI suite has not run. See [XCUITest investigation](XCUITEST-INVESTIGATION.md). This supersedes older statements that no hosted Xcode verification has run; it does not claim GUI success.
+
 ## CI repair candidate — build 102
 
 See [cloud CI report](CI.md) for original GitHub log evidence, the SwiftUI decomposition, pinned macos-26/Xcode 26.5 environment, checks and pending approval boundary. Fresh local SwiftPM debug build passed. Swift Testing reports 91 tests/12 suites passed with 3 opt-in live integrations skipped in this repair. Optimized arm64 app/ZIP/DMG/source packaging and automated artifact validation passed. No new GUI run, local Xcode run or revised GitHub run is claimed. Real removal, settings/cache clearing and Git publication remain unperformed.

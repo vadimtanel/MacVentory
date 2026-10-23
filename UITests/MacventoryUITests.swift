@@ -2,6 +2,27 @@ import XCTest
 
 @MainActor
 final class MacventoryUITests: XCTestCase {
+    private func inventoryTable(_ app: XCUIApplication) -> XCUIElement {
+        // SwiftUI Table is an AXOutline on macOS 26; identify the actual inventory,
+        // not the first outline (which is the sidebar) or an assumed AXTable role.
+        let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        XCTAssertTrue(table.elementType == .outline || table.elementType == .table)
+        return table
+    }
+
+    private func closeSettings(_ app: XCUIApplication, save: Bool = false) {
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        let button = sheet.buttons[save ? "settings.done" : "settings.cancel"]
+        XCTAssertTrue(button.waitForExistence(timeout: 3))
+        XCTAssertTrue(button.isHittable, "Settings actions must be visible above the Dock")
+        button.click()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheet)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed,
+                       "The sheet must close before reopening settings or opening About")
+    }
+
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
@@ -13,7 +34,7 @@ final class MacventoryUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.staticTexts["All Software"].exists)
         XCTAssertTrue(app.staticTexts["Homebrew Formulae"].firstMatch.exists)
-        let row = app.tables.firstMatch.staticTexts["Example App"].firstMatch
+        let row = inventoryTable(app).staticTexts["Example App"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.click()
         XCTAssertTrue(app.buttons["Copy Identifier"].waitForExistence(timeout: 3))
@@ -26,7 +47,8 @@ final class MacventoryUITests: XCTestCase {
         search.click(); search.typeText("does-not-exist")
         XCTAssertTrue(app.staticTexts["No matching software"].waitForExistence(timeout: 3))
         search.typeKey("a", modifierFlags: .command); search.typeKey(.delete, modifierFlags: [])
-        XCTAssertTrue(app.tables.firstMatch.staticTexts["Example App"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertEqual(search.value as? String, "")
+        XCTAssertTrue(inventoryTable(app).staticTexts["Example App"].firstMatch.waitForExistence(timeout: 3))
     }
     func testRefreshCancelAndFilters() {
         let app = launch()
@@ -43,12 +65,12 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["inventory.cancel"].waitForExistence(timeout: 1))
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
         app.buttons["Settings"].firstMatch.click()
-        XCTAssertTrue(app.buttons["Show system applications"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.checkBoxes["Show system applications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.popUpButtons.firstMatch.exists)
     }
     func testUninstallConfirmationSimulationAndCancel() {
         let app = launch()
-        app.tables.firstMatch.staticTexts["Example App"].firstMatch.click()
+        inventoryTable(app).staticTexts["Example App"].firstMatch.click()
         app.buttons["inventory.uninstall"].click()
         let confirm = app.buttons["uninstall.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
@@ -71,7 +93,7 @@ final class MacventoryUITests: XCTestCase {
     }
     func testNativeRowPrimaryActionAndProtectedPreview() {
         let app = launch()
-        let row = app.tables.firstMatch.staticTexts["Example App"].firstMatch
+        let row = inventoryTable(app).staticTexts["Example App"].firstMatch
         row.click()
         XCTAssertFalse(app.buttons["uninstall.confirm"].exists)
         row.doubleClick()
@@ -84,7 +106,7 @@ final class MacventoryUITests: XCTestCase {
         row.doubleClick()
         XCTAssertFalse(confirm.isEnabled)
         app.buttons["Cancel"].firstMatch.click()
-        app.tables.firstMatch.staticTexts["example-tool"].firstMatch.doubleClick()
+        inventoryTable(app).staticTexts["example-tool"].firstMatch.doubleClick()
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertFalse(confirm.isEnabled)
         app.buttons["Cancel"].firstMatch.click()
@@ -93,10 +115,10 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.menuItems["Uninstall…"].exists)
         app.typeKey(.escape, modifierFlags: [])
         app.buttons["Settings"].click()
-        app.buttons["Show system applications"].click()
-        app.buttons["Done"].click()
+        app.checkBoxes["Show system applications"].click()
+        closeSettings(app, save: true)
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
-        app.tables.firstMatch.staticTexts["Example System Component"].firstMatch.doubleClick()
+        inventoryTable(app).staticTexts["Example System Component"].firstMatch.doubleClick()
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertFalse(confirm.isEnabled)
     }
@@ -104,16 +126,18 @@ final class MacventoryUITests: XCTestCase {
     func testColumnVisibilityMenu() {
         let app = launch()
         if #available(macOS 14, *) {
+            XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
             app.buttons["inventory.columns"].click()
             XCTAssertTrue(app.checkBoxes["Version"].firstMatch.exists)
             app.checkBoxes["Version"].firstMatch.click()
-            XCTAssertFalse(app.tables.firstMatch.buttons["Version"].exists)
+            XCTAssertFalse(inventoryTable(app).buttons["Version"].exists)
             app.buttons["Reset Columns"].click()
+            XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
         }
     }
     func testAllNativeHeaderSortsPreserveSelection() {
         let app = launch()
-        let table = app.tables.firstMatch
+        let table = inventoryTable(app)
         table.staticTexts["Example App"].firstMatch.click()
         for title in ["Version", "Source", "Size", "Installed", "Last Opened", "Name"] {
             let header = table.buttons[title]
@@ -141,15 +165,17 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Homebrew prefixes"].exists)
         app.radioButtons["Information"].click()
         XCTAssertTrue(app.buttons["Export Sanitized Diagnostics…"].exists)
-        app.buttons["Done"].click()
+        closeSettings(app, save: true)
         app.buttons["Settings"].click()
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "28")
-        app.buttons["Cancel"].click()
+        closeSettings(app)
         app.buttons["About"].click()
-        XCTAssertTrue(app.links["LinkedIn"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.links["GitHub Profile"].exists)
-        XCTAssertTrue(app.links["Macventory Repository"].exists)
+        let about = app.windows["About Macventory"]
+        XCTAssertTrue(about.waitForExistence(timeout: 3), "About must open after Settings closes")
+        XCTAssertTrue(about.links["LinkedIn"].waitForExistence(timeout: 3))
+        XCTAssertTrue(about.links["GitHub Profile"].exists)
+        XCTAssertTrue(about.links["Macventory Repository"].exists)
     }
 
     func testCancelDiscardsDraftAcrossPages() {
@@ -157,8 +183,13 @@ final class MacventoryUITests: XCTestCase {
         app.buttons["Settings"].click()
         app.radioButtons["Discovery"].click()
         let field = app.textFields["Recently installed threshold"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertEqual(field.value as? String, "30", "Each fixture launch starts with default settings")
         field.click(); field.typeKey("a", modifierFlags: .command); field.typeText("28"); field.typeKey(.tab, modifierFlags: [])
-        app.buttons["Cancel"].click()
+        XCTAssertEqual(field.value as? String, "28")
+        app.radioButtons["Scanning"].click()
+        XCTAssertTrue(app.textFields["Homebrew prefixes"].exists)
+        closeSettings(app)
         app.buttons["Settings"].click()
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "30")

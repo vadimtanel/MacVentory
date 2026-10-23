@@ -43,7 +43,7 @@ struct InventoryView: View {
             .inventoryNavigationTitle()
             .searchable(text: $search, prompt: "Search software, identifiers, paths…")
             .toolbar { inventoryToolbar }
-            .sheet(isPresented: $showSettings) { SettingsView(onClose: { showSettings = false }).frame(width: 760, height: 680) }
+            .sheet(isPresented: $showSettings) { SettingsView(onClose: { showSettings = false }).frame(width: 760, height: SettingsView.presentationHeight) }
             .sheet(isPresented: $showUninstall, onDismiss: { model.cancelUninstall() }) {
                 if let plan = model.uninstallPlan { UninstallView(plan: plan).id(plan.id) }
             }

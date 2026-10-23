@@ -17,7 +17,7 @@ struct MacventoryApp: App {
             CommandGroup(replacing: .appInfo) { Button("About Macventory") { showAbout(appearance: model.configuration.appearance) } }
             CommandGroup(after: .newItem) { Button("Refresh Inventory") { model.refresh() }.keyboardShortcut("r").disabled(model.scanning).help("Refresh Inventory") }
         }
-        Settings { SettingsView().environmentObject(model).frame(width: 760, height: 680) }
+        Settings { SettingsView().environmentObject(model).frame(width: 760, height: SettingsView.presentationHeight) }
     }
 }
 
