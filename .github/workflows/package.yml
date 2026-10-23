@@ -1,0 +1,20 @@
+name: Prepare local-style release artifacts
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests
+        run: bash scripts/swift-tool.sh test --disable-xctest
+      - name: Create ZIP, DMG and checksums
+        run: bash scripts/package-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Macventory-unsigned-release-candidate
+          path: artifacts/*
+          retention-days: 14

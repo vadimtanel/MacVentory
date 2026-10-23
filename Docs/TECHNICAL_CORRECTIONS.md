@@ -1,0 +1,19 @@
+# Technical corrections and declared limitations
+
+These are explicit interpretations/deviations from SPEC.md, not silent scope removals.
+
+1. **Toolchain:** full Xcode is not required for primary development under the owner's revised authorization. SwiftPM plus the installed macOS 26.5 SDK builds the native app. Xcode project and XCUITest execution remain BLOCKED — Full Xcode unavailable. The CLT native build-system fallback is deprecated upstream and documented.
+2. **Homebrew read-only/local requirement:** installed JSON is the preferred documented interface, but `brew info` can fetch/cache metadata even when described as a query. Discovery reads installed local receipts instead; it never invokes brew or evaluates recipes. Separately confirmed removal may invoke Homebrew. Adapter compatibility is narrower than every historical Homebrew format. Keg-only classification is Unknown unless local structured metadata supplies it.
+3. **Store evidence:** receipt presence is inferred origin, not authenticated ownership/purchase. Offline validation of arbitrary third-party receipts is not implemented. No account access, receipt refresh or server request is attempted.
+4. **Dates:** receipt/manager time describes that recorded installation event or version. It may follow an earlier install, and app self-updates can make the manager version older than the bundle. File Created/Modified stay separate. No creation-date fallback is used for Installed.
+5. **Usage:** the restricted CLI originally returned no Spotlight dates. The actual GUI and an unrestricted read-only scan provided 25 observations. Availability depends on indexing/permissions; missing does not mean unused.
+6. **Provider coverage:** MacPorts, Nix, Setapp, Steam and Toolbox are absent here. Fixtures cover recognized formats only. Modern Toolbox generated-launcher association is inferred; missing/unknown/dynamic launchers remain unsupported.
+7. **Size:** use logical bytes; directory traversal does not follow symlinks, hard links are counted once within a footprint, and incomplete traversal remains unknown/partial. No global storage sum or recoverable-space promise is shown. APFS clone/compression/shared-dependency accounting is not implemented.
+8. **Persistence:** approved versioned Codable snapshot instead of SQLite. Existing schema=1 is validated; no older public schema exists to migrate. Unknown future schemas are rejected with a rebuild path.
+9. **Distribution:** outside App Sandbox, ordinary user permissions, no entitlement or privacy bypass. Local ad-hoc signing does not provide Developer ID trust or notarization. No paid-account distribution capability is claimed.
+10. **UI extras:** optional native column visibility and ordering are implemented on macOS 14+, with fixed columns on macOS 13. Actual checkbox hiding/reset passed after a macOS 27 table-refresh workaround. Drag reordering is exposed by the native API but was not confirmed by automation. GUI interactions now have actual inspection evidence; full VoiceOver and keyboard audits remain pending.
+11. **Uninstall:** exact single-app preview/confirmation, fresh validation and simulated execution are implemented. Automatic standalone eligibility is deliberately not inferred by scanners. Most sources require external review; app-only verified casks have a production adapter. No actual destructive operation has been tested or authorized in this run.
+
+The final verification report distinguishes compilation, actual execution, fixture coverage and unavailable environments. No public release readiness is claimed.
+
+Current product refinements: settings use explicit Done/Cancel drafts; Advanced is now Information; About points to the verified official repository. Public screenshots use isolated fictional demo data exclusively. Apple Silicon is primary; Intel is optional rather than a release gate.

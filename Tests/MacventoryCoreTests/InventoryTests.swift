@@ -1,0 +1,423 @@
+import Foundation
+import Testing
+@testable import MacventoryCore
+
+struct Sandbox {
+    let root: URL
+    init() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("MacventoryTests-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+    func write(_ relative: String, _ text: String) throws {
+        let url = root.appendingPathComponent(relative)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+    func app(_ relative: String = "Example.app", id: String = "org.example.app", name: String = "Example") throws -> String {
+        let info: [String: Any] = ["CFBundleIdentifier": id, "CFBundleName": name, "CFBundleShortVersionString": "2.0", "CFBundlePackageType": "APPL"]
+        let url = root.appendingPathComponent(relative).appendingPathComponent("Contents/Info.plist")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: url)
+        return root.appendingPathComponent(relative).path
+    }
+    func clean() { try? FileManager.default.removeItem(at: root) }
+}
+
+struct StubRunner: CommandRunning {
+    var outputs: [String: Data] = [:]
+    var failure = false
+    func run(_ command: InventoryCommand) async throws -> Data {
+        if failure { throw ScanError.timeout }
+        let key = try command.arguments().joined(separator: " ")
+        guard let data = outputs[key] else { throw ScanError.malformed("Missing fixture: " + key) }
+        return data
+    }
+}
+struct StubScanner: SoftwareScanner {
+    var source: InstallSource
+    var result: ScanResult
+    var fail = false
+    func scan() async throws -> ScanResult { if fail { throw ScanError.timeout }; return result }
+}
+struct SlowScanner: SoftwareScanner {
+    let source: InstallSource = .nix
+    func scan() async throws -> ScanResult { try await Task.sleep(for: .seconds(30)); return ScanResult(source) }
+}
+
+@Suite("Installation identity and evidence")
+struct IdentityTests {
+    @Test func samePhysicalPathMergesAndKeepsEvidence() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let path = try box.app()
+        var app = try NativeScanner.item(at: path)
+        app.installedAt = nil
+        var cask = app; cask.primarySource = .homebrewCask
+        cask.sources = [.init(.homebrewCask, Evidence("receipt"))]
+        cask.packageID = "example"
+        let merged = InventoryMerger.merge([app, cask, app])
+        #expect(merged.count == 1)
+        #expect(merged[0].primarySource == .homebrewCask)
+        #expect(merged[0].bundleID == "org.example.app")
+        #expect(merged[0].packageID == "example")
+        #expect(merged[0].installedAt == nil)
+    }
+    @Test func separateCopiesAndSameNamesStaySeparate() {
+        var a = SoftwareItem(name: "Same", path: "/Applications/A.app")
+        var b = SoftwareItem(name: "Same", path: "/Applications/B.app")
+        a.bundleID = "same.id"; b.bundleID = "same.id"
+        #expect(InventoryMerger.merge([a, b]).count == 2)
+    }
+    @Test func symlinkIdentity() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let path = try box.app("Space Ω.app")
+        let alias = box.root.appendingPathComponent("Linked.app").path
+        try FileManager.default.createSymbolicLink(atPath: alias, withDestinationPath: path)
+        let items = InventoryMerger.merge([try NativeScanner.item(at: path), try NativeScanner.item(at: alias)])
+        #expect(items.count == 1)
+    }
+    @Test func contradictoryOwnersAreAmbiguous() {
+        var a = SoftwareItem(name: "A", source: .homebrewCask, path: "/Applications/A.app")
+        a.sources.append(.init(.macPorts, Evidence("registry")))
+        #expect(InventoryMerger.merge([a])[0].primarySource == .unknown)
+    }
+    @Test func installerMechanismDoesNotConflictWithManager() {
+        var a = SoftwareItem(name: "A", source: .homebrewCask, path: "/Applications/A.app")
+        a.sources.append(.init(.pkg, Evidence("receipt")))
+        #expect(InventoryMerger.merge([a])[0].primarySource == .homebrewCask)
+    }
+    @Test func incompleteOwnershipIsNotDirectDownloadProof() {
+        #expect(InventoryMerger.merge([SoftwareItem(name: "A")], uncertainOwnership: true)[0].primarySource == .unknown)
+    }
+    @Test func bundleCreationIsNotInstallation() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let item = try NativeScanner.item(at: box.app())
+        #expect(item.installedAt == nil)
+        #expect(item.fileCreatedAt != nil)
+        #expect(item.evidence["installedAt"]?.availability == .notAvailable)
+    }
+    @Test func receiptPresenceIsInferred() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let path = try box.app()
+        try box.write("Example.app/Contents/_MASReceipt/receipt", "not authenticated")
+        let item = try NativeScanner.item(at: path)
+        #expect(item.primarySource == .appStore)
+        #expect(item.confidence == .inferred)
+    }
+    @Test func steamPayloadOwnsContainedApp() {
+        var game = SoftwareItem(name: "Game", kind: .game, source: .steam, path: "/Games/Game")
+        game.relatedPaths = ["/Games/Game/Game.app"]
+        let app = SoftwareItem(name: "Game", path: "/Games/Game/Game.app")
+        let result = InventoryMerger.merge([app, game])
+        #expect(result.count == 1)
+        #expect(result[0].primarySource == .steam)
+        #expect(result[0].path == "/Games/Game")
+    }
+}
+
+@Suite("Conservative smart views and filters")
+struct FilterTests {
+    let now = Date(timeIntervalSince1970: 1_750_000_000)
+    @Test func missingUsageNeverMeansUnused() {
+        var filter = InventoryFilter(); filter.view = .unused
+        #expect(!filter.matches(SoftwareItem(name: "Unknown use"), configuration: ScanConfiguration(), now: now))
+        var noEvidence = SoftwareItem(name: "No provenance"); noEvidence.lastOpenedAt = now.addingTimeInterval(-400 * 86400)
+        #expect(!filter.matches(noEvidence, configuration: ScanConfiguration(), now: now))
+    }
+    @Test func excludesCLIAndSystemFromUnused() {
+        var filter = InventoryFilter(); filter.view = .unused; filter.showSystem = true
+        var item = SoftwareItem(name: "Old"); item.lastOpenedAt = now.addingTimeInterval(-366 * 86400)
+        item.evidence["lastOpenedAt"] = Evidence("Spotlight", confidence: .inferred)
+        #expect(filter.matches(item, configuration: ScanConfiguration(), now: now))
+        item.kind = .cli
+        #expect(!filter.matches(item, configuration: ScanConfiguration(), now: now))
+        item.kind = .app; item.isSystem = true
+        #expect(!filter.matches(item, configuration: ScanConfiguration(), now: now))
+    }
+    @Test func recentRequiresVerifiedInstallDate() {
+        var filter = InventoryFilter(); filter.view = .recent
+        var item = SoftwareItem(name: "New"); item.installedAt = now
+        #expect(!filter.matches(item, configuration: ScanConfiguration(), now: now))
+        item.evidence["installedAt"] = Evidence("receipt")
+        #expect(filter.matches(item, configuration: ScanConfiguration(), now: now))
+        item.installedAt = now.addingTimeInterval(500)
+        #expect(!filter.matches(item, configuration: ScanConfiguration(), now: now))
+    }
+    @Test func unknownSizeDoesNotMatchLarge() {
+        var filter = InventoryFilter(); filter.view = .large
+        #expect(!filter.matches(SoftwareItem(name: "A"), configuration: ScanConfiguration()))
+    }
+    @Test func combinedSearchKindSourceSizeConfidenceAndDates() {
+        var item = SoftwareItem(name: "Café Tool", kind: .package, source: .homebrewFormula, path: "/opt/homebrew/Cellar/cafe/2", packageID: "cafe")
+        item.sizeBytes = 200; item.installedAt = now
+        var filter = InventoryFilter(); filter.search = "CAFE"; filter.kind = .package; filter.source = .homebrewFormula
+        filter.minimumSize = 100; filter.confidence = .verified; filter.installedAfter = now.addingTimeInterval(-1)
+        #expect(filter.matches(item, configuration: ScanConfiguration(), now: now))
+        filter.minimumSize = 201
+        #expect(!filter.matches(item, configuration: ScanConfiguration(), now: now))
+    }
+    @Test func searchesAllSpecifiedFields() {
+        var item = SoftwareItem(name: "App", source: .homebrewCask, path: "/Applications/Unusual.app", packageID: "special-token")
+        item.bundleID = "org.example.unique"; item.version = "9.8.7"
+        for term in ["unusual", "special-token", "unique", "9.8.7", "homebrew", "app"] {
+            var filter = InventoryFilter(); filter.search = term
+            #expect(filter.matches(item, configuration: ScanConfiguration()))
+        }
+    }
+}
+
+@Suite("Scanner fixtures")
+struct ScannerTests {
+    @Test func nativeNestedBundlesAndSymlinkCycles() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        _ = try box.app("Vendor/Example.app")
+        _ = try box.app("Vendor/Example.app/Contents/Helper.app", id: "helper")
+        try FileManager.default.createSymbolicLink(atPath: box.root.appendingPathComponent("cycle").path, withDestinationPath: box.root.path)
+        let result = try await NativeScanner(roots: [box.root.path]).scan()
+        #expect(result.items.count == 1)
+    }
+    @Test func symlinkedAppIsDiscoveredThroughParentDirectory() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let path = try box.app("Payload/Browser.app")
+        try FileManager.default.createDirectory(at: box.root.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: box.root.appendingPathComponent("Applications/Browser.app").path, withDestinationPath: path)
+        let result = try await NativeScanner(roots: [box.root.appendingPathComponent("Applications").path]).scan()
+        #expect(result.items.count == 1)
+        #expect(result.items[0].path == FileSystem.canonical(path))
+    }
+    @Test func nixModernAndLegacyPositiveFixtures() throws {
+        let modern = Data("{\"elements\":{\"hello\":{\"name\":\"hello\",\"storePaths\":[\"/nix/store/abcd-hello-1\"]}}}".utf8)
+        let legacy = Data("{\"hello-1\":{\"name\":\"hello-1\",\"outputs\":{\"out\":\"/nix/store/abcd-hello-1\"}}}".utf8)
+        #expect(try NixScanner.parse(modern, exists: { _ in true }).first?.packageID == "hello")
+        #expect(try NixScanner.parse(legacy, exists: { _ in true }).first?.path == "/nix/store/abcd-hello-1")
+    }
+    @Test func homebrewAbsentAndEmptyAreDistinct() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let absent = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
+        #expect(absent.report.state == .notInstalled)
+        try FileManager.default.createDirectory(at: box.root.appendingPathComponent("Cellar"), withIntermediateDirectories: true)
+        let empty = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
+        #expect(empty.report.state == .empty)
+    }
+    @Test func malformedNativeBundleDoesNotHideValidApps() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        _ = try box.app()
+        try box.write("Broken.app/Contents/Info.plist", "not a plist")
+        let result = try await NativeScanner(roots: [box.root.path]).scan()
+        #expect(result.report.state == .failed)
+        #expect(result.items.count == 1)
+    }
+    @Test func missingAdditionalProvidersAreNotInstalled() async throws {
+        let root = "/private/tmp/macventory-missing-" + UUID().uuidString
+        #expect(try await MacPortsScanner(executable: root + "/port").scan().report.state == .notInstalled)
+        #expect(try await NixScanner(executable: root + "/nix").scan().report.state == .notInstalled)
+        #expect(try await SetappScanner(roots: [root]).scan().report.state == .notInstalled)
+        #expect(try await SteamScanner(root: root).scan().report.state == .notInstalled)
+    }
+    @Test func multipleKegsAndMalformedReceiptIsolation() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        try box.write("Cellar/tool/1/INSTALL_RECEIPT.json", "{\"time\":1700000000,\"installed_on_request\":true}")
+        try box.write("Cellar/tool/2/INSTALL_RECEIPT.json", "{\"time\":1710000000}")
+        try box.write("Cellar/broken/1/INSTALL_RECEIPT.json", "broken")
+        let result = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
+        #expect(result.items.count == 2)
+        #expect(Set(result.items.map(\.id)).count == 2)
+        #expect(result.report.state == .failed)
+        #expect(result.items.allSatisfy { $0.installedAt != nil && $0.lastOpenedAt == nil })
+    }
+    @Test func caskArtifactWithSpacesAndMissingPayload() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let path = try box.app("Applications/Space Ω.app", name: "Renamed Display")
+        let prefix = "Caskroom/example"
+        try box.write(prefix + "/.metadata/INSTALL_RECEIPT.json", "{\"time\":1700000000,\"source\":{\"version\":\"1\"},\"uninstall_artifacts\":[{\"app\":[\"Space Ω.app\"]}]}")
+        let config = ["default": ["appdir": box.root.appendingPathComponent("Applications").path]]
+        let data = try JSONSerialization.data(withJSONObject: config)
+        try box.write(prefix + "/.metadata/config.json", String(decoding: data, as: UTF8.self))
+        let items = try HomebrewScanner.cask(box.root.appendingPathComponent(prefix).path)
+        #expect(items.first?.path == FileSystem.canonical(path))
+        #expect(items.first?.name == "Renamed Display")
+        try FileManager.default.removeItem(atPath: path)
+        let orphan = try HomebrewScanner.cask(box.root.appendingPathComponent(prefix).path)
+        #expect(orphan.first?.path == nil)
+        #expect(orphan.first?.kind == .package)
+    }
+    @Test func appStoreEmptyWithoutReceipts() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        _ = try box.app()
+        let result = try await AppStoreScanner(native: NativeScanner(roots: [box.root.path])).scan()
+        #expect(result.report.state == .empty)
+    }
+    @Test func pkgReceiptWithMissingPayloadIsNotApp() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let plist: [String: Any] = ["pkgid": "org.test.pkg", "pkg-version": "1", "install-location": box.root.path, "volume": "/", "install-time": 1_700_000_000]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        let runner = StubRunner(outputs: ["--pkgs": Data("org.test.pkg\n".utf8), "--pkg-info-plist org.test.pkg": data, "--files org.test.pkg": Data("Missing.app/Contents/Info.plist\n".utf8)])
+        let result = try await PKGScanner(runner: runner).scan()
+        #expect(result.items.count == 1)
+        #expect(result.items[0].kind == .package)
+        #expect(result.items[0].path == nil)
+        #expect(result.items[0].attributes["Payload"]?.contains("Receipt only") == true)
+    }
+    @Test func macPortsVersionsAndMalformedOutput() throws {
+        let result = try MacPortsScanner.parse("tool @1.0_0 (active)\n tool @0.9_0\n", prefix: "/opt/local")
+        #expect(result.count == 2)
+        #expect(Set(result.map(\.id)).count == 2)
+        #expect(result[0].attributes["Active"] == "Yes")
+        #expect(throws: (any Error).self) { try MacPortsScanner.parse("nonsense", prefix: "/opt/local") }
+    }
+    @Test func nixFormatsAndMalformedData() throws {
+        #expect(try NixScanner.parse(Data("{\"elements\":{}}".utf8)).isEmpty)
+        #expect(try NixScanner.parse(Data("{}".utf8)).isEmpty)
+        #expect(throws: (any Error).self) { try NixScanner.parse(Data("{\"invalid\":42}".utf8)) }
+        #expect(throws: (any Error).self) { try NixScanner.parse(Data("not json".utf8)) }
+        let absent = try NixScanner.parse(Data("{\"elements\":{\"hello\":{\"storePaths\":[\"/nix/store/absent-test\"]}}}".utf8))
+        #expect(absent.isEmpty)
+    }
+    @Test func keyValuesEscapesNestingAndErrors() throws {
+        let value = try KeyValues.parse("// Comment\n\"root\" { \"name\" \"Space Ω\" \"nested\" { \"x\" \"y\" } }")
+        #expect(value["root"]?.object?["name"]?.text == "Space Ω")
+        for malformed in ["\"x\" {", "\"x\"", "}", "\"x\" \"unterminated"] {
+            #expect(throws: (any Error).self) { try KeyValues.parse(malformed) }
+        }
+    }
+    @Test func steamManifestDoesNotInventProductVersionOrInstallDate() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        try box.write("steamapps/appmanifest_123.acf", "\"AppState\" { \"appid\" \"123\" \"name\" \"Test Game\" \"installdir\" \"Test Game\" \"buildid\" \"42\" \"LastUpdated\" \"1700000000\" }")
+        try box.write("steamapps/common/Test Game/game.bin", "game")
+        let result = try await SteamScanner(root: box.root.path).scan()
+        #expect(result.items.count == 1)
+        #expect(result.items[0].version == nil)
+        #expect(result.items[0].installedAt == nil)
+        #expect(result.items[0].updatedAt != nil)
+    }
+    @Test func steamRejectsPathEscape() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        try box.write("steamapps/appmanifest_1.acf", "\"AppState\" { \"appid\" \"1\" \"installdir\" \"../../escape\" }")
+        #expect(try await SteamScanner(root: box.root.path).scan().items.isEmpty)
+    }
+    @Test func setappNeedsMoreThanFolderName() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        _ = try box.app()
+        #expect(try await SetappScanner(roots: [box.root.path]).scan().items.isEmpty)
+        try FileManager.default.createDirectory(at: box.root.appendingPathComponent("Example.app/Contents/Frameworks/Setapp.framework"), withIntermediateDirectories: true)
+        let result = try await SetappScanner(roots: [box.root.path]).scan()
+        #expect(result.items.count == 1)
+        #expect(result.items[0].confidence == .inferred)
+    }
+    @Test func toolboxDoesNotClaimStandaloneJetBrainsIDE() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        _ = try box.app(id: "com.jetbrains.idea", name: "IntelliJ IDEA")
+        #expect(try await ToolboxScanner(roots: [box.root.path]).scan().items.isEmpty)
+    }
+    @Test func toolboxLegacyProviderOwnedLayout() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let root = "JetBrains/Toolbox/apps"
+        _ = try box.app(root + "/IDEA-U/ch-0/243.123/IntelliJ IDEA.app", id: "com.jetbrains.idea", name: "IntelliJ IDEA")
+        let result = try await ToolboxScanner(roots: [box.root.appendingPathComponent(root).path]).scan()
+        #expect(result.items.count == 1)
+        #expect(result.items[0].primarySource == .toolbox)
+        #expect(result.items[0].confidence == .inferred)
+    }
+}
+
+@Suite("Cache, size, coordination and safety")
+struct InfrastructureTests {
+    @Test func unknownSortsLastInBothDirections() {
+        var known = SoftwareItem(name: "Known", path: "/known"); known.sizeBytes = 2
+        let unknown = SoftwareItem(name: "Unknown", path: "/unknown")
+        for descending in [true, false] {
+            #expect(InventorySort.sorted([unknown, known], by: .size, descending: descending).last?.name == "Unknown")
+        }
+    }
+    @Test func equalSortValuesUseStableIdentity() {
+        let a = SoftwareItem(name: "Same", path: "/a"), b = SoftwareItem(name: "Same", path: "/b")
+        #expect(InventorySort.sorted([b, a]).map(\.id) == [a.id, b.id])
+    }
+    @Test func snapshotRoundTripAndUnsupportedVersion() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let store = SnapshotStore(directory: box.root)
+        #expect(try await store.load() == nil)
+        var snapshot = InventorySnapshot(items: [SoftwareItem(name: "A")], reports: [])
+        try await store.save(snapshot)
+        #expect(try await store.load()?.items.first?.stale == true)
+        snapshot.schemaVersion = 99
+        try await store.save(snapshot)
+        await #expect(throws: (any Error).self) { try await store.load() }
+        try await store.clear()
+        #expect(try await store.load() == nil)
+    }
+    @Test func corruptCacheIsReported() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        try box.write("inventory.json", "corrupt")
+        await #expect(throws: (any Error).self) { try await SnapshotStore(directory: box.root).load() }
+    }
+    @Test func sizesDoNotFollowSymlinksOrDoubleCountHardlinks() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        try box.write("app/file", "12345")
+        try FileManager.default.linkItem(at: box.root.appendingPathComponent("app/file"), to: box.root.appendingPathComponent("app/hardlink"))
+        try box.write("outside", "1234567890")
+        try FileManager.default.createSymbolicLink(atPath: box.root.appendingPathComponent("app/external").path, withDestinationPath: box.root.appendingPathComponent("outside").path)
+        let footprint = try SizeMeasurer.measure(box.root.appendingPathComponent("app").path)
+        #expect(footprint.bytes == 5)
+        #expect(footprint.complete)
+        #expect(try !SizeMeasurer.measure(box.root.appendingPathComponent("app").path, maximumEntries: 1).complete)
+    }
+    @Test func failureRetainsStaleSourceAndDoesNotBlockOthers() async {
+        let old = SoftwareItem(name: "Old", source: .homebrewFormula, path: "/old")
+        let new = SoftwareItem(name: "New", source: .unmanaged, path: "/new")
+        let previous = InventorySnapshot(items: [old], reports: [], observations: [InstallSource.homebrewFormula.rawValue: [old]])
+        let scanners: [any SoftwareScanner] = [StubScanner(source: .homebrewFormula, result: ScanResult(.homebrewFormula), fail: true), StubScanner(source: .unmanaged, result: ScanResult(.unmanaged, items: [new]))]
+        let result = await InventoryService().scan(configuration: ScanConfiguration(), previous: previous, measureSizes: false, scanners: scanners) { _ in }
+        #expect(result.items.count == 2)
+        #expect(result.items.first(where: { $0.name == "Old" })?.stale == true)
+        #expect(result.reports.contains { $0.state == .failed })
+    }
+    @Test func successRemovesOldSourceObservations() async {
+        let old = SoftwareItem(name: "Old", source: .homebrewFormula)
+        let previous = InventorySnapshot(items: [old], reports: [], observations: [InstallSource.homebrewFormula.rawValue: [old]])
+        let result = await InventoryService().scan(configuration: ScanConfiguration(), previous: previous, measureSizes: false, scanners: [StubScanner(source: .homebrewFormula, result: ScanResult(.homebrewFormula))]) { _ in }
+        #expect(result.items.isEmpty)
+    }
+    @Test func sanitizedDiagnosticsExcludePrivateText() throws {
+        var item = SoftwareItem(name: "Private App", path: "/Users/private/secret.app"); item.packageID = "secret.identifier"
+        let snapshot = InventorySnapshot(items: [item], reports: [.init(.pkg, .failed, "/Users/private/secret")])
+        let text = String(decoding: try Diagnostics.sanitized(snapshot), as: UTF8.self)
+        #expect(!text.contains("private")); #expect(!text.contains("secret")); #expect(!text.contains("Private App"))
+    }
+    @Test func commandArgumentsRejectInjectionAndAreReadOnly() throws {
+        for text in ["-uninstall", "hello; rm -rf /", "$(curl bad)", "../escape", ""] {
+            #expect(throws: (any Error).self) { try InventoryCommand.receiptInfo(text).arguments() }
+        }
+        let commands: [InventoryCommand] = [.receipts, .receiptInfo("org.example.pkg"), .receiptFiles("org.example.pkg"), .ports(executable: "/opt/local/bin/port"), .portContents(executable: "/opt/local/bin/port", name: "foo"), .nix(executable: "/nix/bin/nix", profile: nil), .legacyNix(executable: "/nix/bin/nix-env")]
+        for command in commands {
+            let arguments = try command.arguments()
+            #expect(!arguments.contains { ["uninstall", "install", "update", "upgrade", "remove", "sudo"].contains($0) })
+        }
+    }
+    @Test func processOutputLimitAndTimeoutAreEnforced() async {
+        await #expect(throws: (any Error).self) { try await ProcessRunner(outputLimit: 1).run(.receipts) }
+        await #expect(throws: (any Error).self) { try await ProcessRunner(timeout: .zero).run(.receipts) }
+    }
+    @Test func canceledProcessDoesNotContinue() async {
+        let task = Task { try await ProcessRunner().run(.receipts) }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+    @Test func canceledScanReportsCancellationAndKeepsOldData() async {
+        let old = SoftwareItem(name: "Old", source: .nix, path: "/nix/store/old")
+        let previous = InventorySnapshot(items: [old], reports: [], observations: [InstallSource.nix.rawValue: [old]])
+        let task = Task { await InventoryService().scan(configuration: ScanConfiguration(), previous: previous, measureSizes: false, scanners: [SlowScanner()]) { _ in } }
+        task.cancel()
+        let result = await task.value
+        #expect(result.reports.first?.state == .canceled)
+        #expect(result.items.first?.stale == true)
+    }
+    @Test func processStructuredOutputIsDrainedCompletely() async throws {
+        let receiptData = try await ProcessRunner().run(.receipts)
+        let id = try #require(String(decoding: receiptData, as: UTF8.self).split(separator: "\n").map(String.init).first(where: FileSystem.validPackageIdentifier))
+        for _ in 0..<3 {
+            let data = try await ProcessRunner().run(.receiptInfo(id))
+            let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+            #expect(plist?["pkgid"] as? String == id)
+        }
+    }
+}

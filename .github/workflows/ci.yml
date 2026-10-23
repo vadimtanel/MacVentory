@@ -1,0 +1,45 @@
+name: Build and test Macventory
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    continue-on-error: ${{ matrix.runner == 'macos-15-intel' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          sw_vers
+      - name: Swift package build
+        run: bash scripts/swift-tool.sh build
+      - name: Swift package tests
+        run: bash scripts/swift-tool.sh test --disable-xctest
+      - name: Xcode build and unit/UI tests
+        run: >-
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory
+          -destination 'platform=macOS' -derivedDataPath build/DerivedData
+          -resultBundlePath build/Macventory.xcresult
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual test
+      - name: Package app
+        run: bash scripts/build-app.sh release
+      - name: Upload verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.runner }}
+          path: |
+            build/Macventory.xcresult
+            build/Macventory.app
+          if-no-files-found: warn
+          retention-days: 14

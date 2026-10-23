@@ -1,0 +1,38 @@
+# SwiftPM / Xcode generated output
+.build/
+.swiftpm/
+build/
+artifacts/
+DerivedData/
+*.xcresult/
+xcuserdata/
+*.xcuserstate
+*.o
+*.swiftmodule
+*.swiftdoc
+*.dSYM/
+# Regenerable intermediate; shipped ICNS and original artwork stay public
+/Resources/Macventory.iconset/
+# Local evidence and private exports
+*-log.txt
+runtime-*.json
+local-inventory*.json
+Macventory-diagnostics*.json
+# Local credentials / environment (never publication inputs)
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.key
+*.mobileprovision
+.ssh/
+.aws/
+# Editor / OS temporary state
+.DS_Store
+__pycache__/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

@@ -1,0 +1,224 @@
+import SwiftUI
+import AppKit
+import MacventoryCore
+
+struct InventoryView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var navigation = "view:all"
+    @State private var search = ""
+    @State private var selected: String?
+    @State private var filter = InventoryFilter()
+    @State private var showFilters = false
+    @State private var showSettings = false
+    @State private var showUninstall = false
+    @State private var showDetails = true
+    @State private var headerSort = [InventoryComparator()]
+
+    private var tableSort: Binding<[InventoryComparator]> {
+        Binding(get: { headerSort }, set: { proposed in
+            guard let first = proposed.first else { return }
+            headerSort = [InventoryComparator.headerSelection(first, after: headerSort.first)]
+        })
+    }
+    private var activeFilter: InventoryFilter {
+        var value = filter; value.search = search; value.showSystem = model.configuration.showSystem || filter.systemOnly
+        if let view = LibraryView.allCases.first(where: { "view:" + $0.id == navigation }) { value.view = view }
+        return value
+    }
+    private var rows: [SoftwareItem] {
+        let filtered = model.items.filter {
+            guard activeFilter.matches($0, configuration: model.configuration) else { return false }
+            guard navigation.hasPrefix("source:"), let source = InstallSource(rawValue: String(navigation.dropFirst(7))) else { return true }
+            return source == .unknown ? $0.primarySource == .unknown : $0.sources.contains { $0.source == source }
+        }
+        return InventorySort.sorted(filtered, by: headerSort.first?.key ?? .name, descending: headerSort.first?.order == .reverse)
+    }
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $navigation) {
+                Section("Library") { ForEach([LibraryView.all, .apps, .packages], id: \.rawValue) { libraryRow($0) } }
+                Section("Smart Views") { ForEach([LibraryView.unused, .large, .recent, .unknown], id: \.rawValue) { libraryRow($0) } }
+                Section("Install Sources") {
+                    ForEach(InstallSource.allCases.filter { source in !model.configuration.hideAbsent || model.reports.first(where: { $0.source == source })?.state != .notInstalled }) { source in
+                        HStack {
+                            Text(source.title)
+                            Spacer()
+                            if let report = model.reports.first(where: { $0.source == source }), report.state == .failed || report.state == .unsupported {
+                                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange).help(report.message)
+                            } else if model.reports.first(where: { $0.source == source })?.state == .scanning { ProgressView().controlSize(.mini) }
+                            Text("\(model.items.filter { item in (model.configuration.showSystem || !item.isSystem) && (source == .unknown ? item.primarySource == .unknown : item.sources.contains { $0.source == source }) }.count)").foregroundStyle(.secondary).monospacedDigit()
+                        }.tag("source:" + source.rawValue).help("Show software associated with " + source.title)
+                    }
+                }
+            }.listStyle(.sidebar).navigationSplitViewColumnWidth(min: 220, ideal: 245)
+                .accessibilityIdentifier("inventory.sidebar")
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 10) {
+                        Divider()
+                        HStack(spacing: 18) {
+                            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }.controlHelp("Show Settings")
+                            Button { showAbout(appearance: model.configuration.appearance) } label: { Label("About", systemImage: "info.circle") }.controlHelp("About Macventory")
+                            Spacer(minLength: 0)
+                        }.buttonStyle(.plain).padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 18)
+                    }.background(.bar)
+                }
+        } detail: {
+            VStack(spacing: 0) {
+                if model.demoMode { Text("Demo inventory · fictional software · removal disabled").font(.caption).foregroundStyle(.secondary).padding(8) }
+                else if model.qaProtected { Label("QA protection: uninstall operations are simulated", systemImage: "shield.checkered").font(.caption).padding(8) }
+                if showFilters { FilterView(filter: $filter).padding().background(.bar) }
+                if let error = model.error { HStack { Image(systemName: "exclamationmark.triangle"); Text(error); Spacer(); Button("Dismiss") { model.error = nil }.controlHelp("Dismiss this error message") }.padding(10).background(.orange.opacity(0.1)) }
+                HSplitView {
+                    table.frame(minWidth: 560)
+                    if showDetails, let item = model.items.first(where: { $0.id == selected }) {
+                        DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays).id(item.id).frame(minWidth: 270, idealWidth: 300, maxWidth: 380)
+                    }
+                }
+                Divider()
+                HStack(spacing: 10) {
+                    if model.scanning { ProgressView().controlSize(.small) }
+                    Text(model.progress).lineLimit(1)
+                    Spacer()
+                    Text("\(rows.count) shown of \(model.items.count)").monospacedDigit()
+                        .help("Sidebar counts exclude hidden system software. Shown also reflects the selected category, search and filters.")
+                    if !model.configuration.showSystem, model.items.contains(where: \.isSystem) { Text("System apps hidden").help("Enable Show system applications in Settings to include them.") }
+                    if model.items.contains(where: \.stale) { Label("Cached / Stale", systemImage: "clock").help("Some observations have not been successfully refreshed") }
+                }.font(.caption).foregroundStyle(.secondary).padding(10)
+            }
+            .inventoryNavigationTitle()
+            .searchable(text: $search, prompt: "Search software, identifiers, paths…")
+            .toolbar {
+                if #available(macOS 26, *) {
+                    ToolbarItem(placement: .navigation) { BrandHeader().background(NativeControlHelp().frame(width: 0, height: 0)) }.sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .navigation) { BrandHeader().background(NativeControlHelp().frame(width: 0, height: 0)) }
+                }
+                ToolbarItemGroup {
+                    Button { showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease.circle") }.accessibilityIdentifier("inventory.filters").controlHelp("Filter Software").accessibilityLabel("Filter Software")
+                    Button { showDetails.toggle() } label: { Label("Details", systemImage: "sidebar.right") }.controlHelp(showDetails ? "Hide Details" : "Show Details").accessibilityLabel(showDetails ? "Hide Details" : "Show Details")
+                    if model.scanning { Button("Cancel") { model.cancel() }.accessibilityIdentifier("inventory.cancel").controlHelp("Cancel Scan") }
+                    else { Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.accessibilityIdentifier("inventory.refresh").controlHelp("Refresh Inventory").accessibilityLabel("Refresh Inventory") }
+                }
+            }
+            .sheet(isPresented: $showSettings) { SettingsView(onClose: { showSettings = false }).frame(width: 760, height: 680) }
+            .sheet(isPresented: $showUninstall, onDismiss: { model.cancelUninstall() }) {
+                if let plan = model.uninstallPlan { UninstallView(plan: plan).id(plan.id) }
+            }
+            .onChange(of: model.uninstallPlan?.id) { if $0 == nil { showUninstall = false } }
+            .onAppear { headerSort = [InventoryComparator(InventorySortKey(rawValue: model.configuration.defaultSort) ?? .name)] }
+            .onChange(of: rows.map(\.id)) { ids in if let selected, !ids.contains(selected) { self.selected = nil } }
+        }
+    }
+    private func reviewUninstall(_ item: SoftwareItem) {
+        guard model.uninstallPlan == nil, !model.scanning, !model.uninstallWorking else { return }
+        model.prepareUninstall(item)
+        showUninstall = model.uninstallPlan != nil
+    }
+    private var table: some View {
+        Group {
+            if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: $selected, sortOrder: tableSort) }
+            else { legacyTable }
+        }
+        .onAppear { model.noteWindowAppearance() }
+
+        .overlay {
+            if rows.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "square.stack.3d.up").font(.largeTitle).foregroundStyle(.secondary)
+                    Text(model.scanning ? "Discovering software…" : "No matching software").font(.headline)
+                    Text("Refresh the inventory or adjust search and filters.").foregroundStyle(.secondary)
+                }.padding(30).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) {
+                Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
+                if let path = item.path { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder"); Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path") }
+                Button("Uninstall…") { selected = id; reviewUninstall(item) }.disabled(model.scanning || model.uninstallWorking).controlHelp("Review uninstall eligibility; nothing is removed by opening the preview")
+            }
+        } primaryAction: { ids in
+            guard ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) else { return }
+            selected = id
+            reviewUninstall(item)
+        }
+
+    }
+    private var legacyTable: some View {
+        Table(rows, selection: $selected, sortOrder: tableSort) {
+            TableColumn("Name", sortUsing: InventoryComparator(.name)) { item in
+                HStack(spacing: 9) {
+                    AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"])
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name).lineLimit(1).help(item.name)
+                        if item.stale { Text("Cached / Stale").font(.caption2).foregroundStyle(.secondary) }
+                    }
+                }.padding(.vertical, 3)
+            }.width(min: 160, ideal: 220)
+            TableColumn("Version", sortUsing: InventoryComparator(.version)) { Text($0.version ?? "Not Available").help($0.version ?? "Version Not Available").foregroundStyle($0.version == nil ? .secondary : .primary).lineLimit(1) }.width(min: 75, ideal: 100)
+            TableColumn("Source", sortUsing: InventoryComparator(.source)) { Text($0.primarySource.title).lineLimit(1).help($0.primarySource.title) }.width(min: 120, ideal: 165)
+            TableColumn("Size", sortUsing: InventoryComparator(.size)) { Text(Display.size($0)).monospacedDigit().help($0.sizeMetric) }.width(min: 85, ideal: 100)
+            TableColumn("Installed", sortUsing: InventoryComparator(.installed)) { Text(Display.date($0.installedAt, item: $0, field: "installedAt")).help($0.installedAt?.formatted(date: .complete, time: .standard) ?? "Not Available") }.width(min: 100, ideal: 115)
+            TableColumn("Last Opened", sortUsing: InventoryComparator(.opened)) { Text(Display.date($0.lastOpenedAt, item: $0, field: "lastOpenedAt")).help($0.lastOpenedAt?.formatted(date: .complete, time: .standard) ?? "Not Available") }.width(min: 100, ideal: 115)
+        }
+        .accessibilityIdentifier("inventory.table").accessibilityHint("Select a row for details. Double-click or press Return to review uninstall eligibility; this never starts removal.")
+    }
+    private func libraryRow(_ view: LibraryView) -> some View {
+        HStack { Text(view.rawValue); Spacer(); Text("\(model.items.filter { item in var filter = InventoryFilter(); filter.view = view; filter.showSystem = model.configuration.showSystem; return filter.matches(item, configuration: model.configuration) }.count)").foregroundStyle(.secondary).monospacedDigit() }.tag("view:" + view.id).help("Show " + view.rawValue)
+    }
+}
+
+extension LibraryView { var id: String { switch self { case .all: "all"; case .apps: "apps"; case .packages: "packages"; case .unused: "unused"; case .large: "large"; case .recent: "recent"; case .unknown: "unknown" } } }
+
+struct AppIcon: View {
+    let path: String?
+    var demoSymbol: String? = nil
+    @State private var icon: NSImage?
+    var body: some View {
+        Group {
+            if let demoSymbol { Image(systemName: demoSymbol).resizable().scaledToFit().foregroundStyle(.blue).padding(4) }
+            else if let icon { Image(nsImage: icon).resizable() }
+            else { Image(systemName: "shippingbox").resizable().scaledToFit().foregroundStyle(.secondary).padding(4) }
+        }.frame(width: 28, height: 28).accessibilityHidden(true)
+            .task(id: path) {
+                guard demoSymbol == nil, let path else { return }
+                icon = NSWorkspace.shared.icon(forFile: path)
+            }
+    }
+}
+
+struct FilterView: View {
+    @Binding var filter: InventoryFilter
+    @State private var sizeMB = ""
+    @State private var installedRange = false
+    @State private var openedRange = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Picker("Source", selection: $filter.source) { Text("Any").tag(nil as InstallSource?); ForEach(InstallSource.allCases) { Text($0.title).tag(Optional($0)) } }.controlHelp("Filter by installation source")
+                Picker("Kind", selection: $filter.kind) { Text("Any").tag(nil as SoftwareKind?); ForEach(SoftwareKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) } }.controlHelp("Filter applications, games or packages")
+                Picker("Confidence", selection: $filter.confidence) { Text("Any").tag(nil as Confidence?); ForEach(Confidence.allCases, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) } }.controlHelp("Filter by metadata confidence")
+            }
+            HStack {
+                TextField("Minimum MB", text: $sizeMB).frame(width: 140).onChange(of: sizeMB) { filter.minimumSize = Int64($0).flatMap { $0 >= 0 && $0 <= Int64.max / 1_000_000 ? $0 * 1_000_000 : nil } }.controlHelp("Minimum logical size in megabytes")
+                Toggle("Missing metadata", isOn: $filter.missingOnly).controlHelp("Show only software with missing metadata")
+                Toggle("System only", isOn: $filter.systemOnly).controlHelp("Show only system software")
+                Spacer()
+                Button("Reset") { filter = InventoryFilter(); sizeMB = ""; installedRange = false; openedRange = false }.controlHelp("Reset all inventory filters")
+            }
+            HStack {
+                Toggle("Installed range", isOn: $installedRange).onChange(of: installedRange) { enabled in filter.installedAfter = enabled ? Date().addingTimeInterval(-30 * 86400) : nil; filter.installedBefore = enabled ? Date() : nil }.controlHelp("Installed range")
+                if installedRange {
+                    DatePicker("From", selection: Binding(get: { filter.installedAfter ?? Date() }, set: { filter.installedAfter = $0 }), displayedComponents: .date).controlHelp("Start date for the selected filter range")
+                    DatePicker("To", selection: Binding(get: { filter.installedBefore ?? Date() }, set: { filter.installedBefore = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: $0))?.addingTimeInterval(-0.001) }), displayedComponents: .date).controlHelp("End date for the selected filter range")
+                }
+            }
+            HStack {
+                Toggle("Last-opened range", isOn: $openedRange).onChange(of: openedRange) { enabled in filter.openedAfter = enabled ? Date().addingTimeInterval(-365 * 86400) : nil; filter.openedBefore = enabled ? Date() : nil }.controlHelp("Last-opened range")
+                if openedRange {
+                    DatePicker("From", selection: Binding(get: { filter.openedAfter ?? Date() }, set: { filter.openedAfter = $0 }), displayedComponents: .date).controlHelp("Start date for the selected filter range")
+                    DatePicker("To", selection: Binding(get: { filter.openedBefore ?? Date() }, set: { filter.openedBefore = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: $0))?.addingTimeInterval(-0.001) }), displayedComponents: .date).controlHelp("End date for the selected filter range")
+                }
+            }
+        }.controlSize(.small)
+    }
+}
