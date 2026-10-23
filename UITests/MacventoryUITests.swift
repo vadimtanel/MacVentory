@@ -25,7 +25,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 3))
         search.click(); search.typeText("does-not-exist")
         XCTAssertTrue(app.staticTexts["No matching software"].waitForExistence(timeout: 3))
-        search.typeKey("a", modifierFlags: .command); search.typeKey(.delete)
+        search.typeKey("a", modifierFlags: .command); search.typeKey(.delete, modifierFlags: [])
         XCTAssertTrue(app.tables.firstMatch.staticTexts["Example App"].firstMatch.waitForExistence(timeout: 3))
     }
     func testRefreshCancelAndFilters() {
@@ -135,7 +135,7 @@ final class MacventoryUITests: XCTestCase {
         app.radioButtons["Discovery"].click()
         let days = app.textFields["Recently installed threshold"]
         XCTAssertTrue(days.waitForExistence(timeout: 3))
-        days.click(); days.typeKey("a", modifierFlags: .command); days.typeText("28"); days.typeKey(.tab)
+        days.click(); days.typeKey("a", modifierFlags: .command); days.typeText("28"); days.typeKey(.tab, modifierFlags: [])
         XCTAssertEqual(days.value as? String, "28")
         app.radioButtons["Scanning"].click()
         XCTAssertTrue(app.textFields["Homebrew prefixes"].exists)
@@ -157,7 +157,7 @@ final class MacventoryUITests: XCTestCase {
         app.buttons["Settings"].click()
         app.radioButtons["Discovery"].click()
         let field = app.textFields["Recently installed threshold"]
-        field.click(); field.typeKey("a", modifierFlags: .command); field.typeText("28"); field.typeKey(.tab)
+        field.click(); field.typeKey("a", modifierFlags: .command); field.typeText("28"); field.typeKey(.tab, modifierFlags: [])
         app.buttons["Cancel"].click()
         app.buttons["Settings"].click()
         app.radioButtons["Discovery"].click()
