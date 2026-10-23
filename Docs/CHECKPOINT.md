@@ -48,3 +48,10 @@ README/SPEC/security/source matrix/UNINSTALL/verification updated. Xcode project
 Current repository HEAD inspected in this pass is 1cc7ac49d37ee1273eb6a649bb41456e633acbbf. The earlier LICENSE-only/55f7ea9 statements above describe historical handoffs; the current baseline already tracks 85 files. This execution made no commits or index changes.
 
 Final packaging checks: ZIP extraction, signature, build102/executable/ICNS matches and actual demo GUI pass. DMG integrity/read-only mount contents/signature/build102/icon checks pass; detached safely. Release executable has no developer home path. Manifest/link/privacy review passes with 87 inputs. Source archive/checksums regenerated after final docs. No new source changes after the passing 91-test run and native build.
+
+
+## Current handoff — GitHub CI repair candidate, build 102
+
+Working baseline a7d2a9c; original failed run used older 1cc7ac49. Split InventoryView's large body into typed view/toolbar boundaries, preserving state, sorting/filtering/table interactions/settings/uninstall presentation. Both workflows now select standard macos-26 arm64 and pinned preinstalled Xcode 26.5, verify Swift 6.3/SDK 26.5 and log environment details. Swift helper honors DEVELOPER_DIR and resolves Swift via xcrun. Shared scheme and generator set --ui-testing on the Xcode unit-test app host. Synthetic fixtures/simulation only in CI; opt-in live checks disabled. Primary build/unit/package checks and explicitly reported XCUITest run are separate jobs; a failed GUI attempt remains a failed/incomplete result.
+
+Fresh local SwiftPM build and 91-test report (3 live integrations skipped) pass. Optimized arm64 packaging and artifact validation pass; shell/YAML/XML/plist/whitespace/publication checks pass. No local Xcode retry, Apple authentication, real uninstall, settings/cache clearing or new GUI verification. Revised cloud execution awaits approval to commit/push; do not mistake prepared workflows for executed checks. See [CI.md](CI.md). No staging/commit/push/tag/release occurred in this repair. Existing earlier execution evidence remains historical.

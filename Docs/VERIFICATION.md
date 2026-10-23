@@ -2,6 +2,10 @@
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
+## CI repair candidate — build 102
+
+See [cloud CI report](CI.md) for original GitHub log evidence, the SwiftUI decomposition, pinned macos-26/Xcode 26.5 environment, checks and pending approval boundary. Fresh local SwiftPM debug build passed. Swift Testing reports 91 tests/12 suites passed with 3 opt-in live integrations skipped in this repair. Optimized arm64 app/ZIP/DMG/source packaging and automated artifact validation passed. No new GUI run, local Xcode run or revised GitHub run is claimed. Real removal, settings/cache clearing and Git publication remain unperformed.
+
 ## Current standalone removal pass — build 102
 
 - **91 tests / 12 suites pass**, including all 3 enabled read-only live integrations and 20 uninstall/standalone test methods. All prior safety tests remain; the inferred-source expectation now reflects independently established Trash eligibility. Parameterized cases cover service/provider markers. No real removal adapter is invoked.
