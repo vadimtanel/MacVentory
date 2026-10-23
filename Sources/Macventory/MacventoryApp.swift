@@ -10,9 +10,11 @@ struct MacventoryApp: App {
         WindowGroup {
             InventoryView().environmentObject(model)
                 .preferredColorScheme(model.configuration.appearance == "dark" ? .dark : model.configuration.appearance == "light" ? .light : nil)
-                .frame(minWidth: 1050, minHeight: 620)
+                .frame(minWidth: 900, minHeight: 520)
+                .background(InventoryWindowLayout().frame(width: 0, height: 0))
         }
-        .defaultSize(width: 1320, height: 820)
+        .defaultSize(width: min(1320, NSScreen.main?.visibleFrame.width ?? 1320),
+                     height: min(820, (NSScreen.main?.visibleFrame.height ?? 848) - 28))
         .commands {
             CommandGroup(replacing: .appInfo) { Button("About Macventory") { showAbout(appearance: model.configuration.appearance) } }
             CommandGroup(after: .newItem) { Button("Refresh Inventory") { model.refresh() }.keyboardShortcut("r").disabled(model.scanning).help("Refresh Inventory") }

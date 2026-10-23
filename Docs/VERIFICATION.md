@@ -2,6 +2,10 @@
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
+## Latest compact-display correction candidate
+
+Both0811660 workflows pass primary native validation. PR40031376348 runs10 GUI tests with2 failures; push40031370109 has6 failures. Full logs/xcresult/video evidence shows window/content overflow; Source is visibly on-screen but native hit testing fails. Display-contained window geometry and native vertical details on compact widths are prepared. Local build/fixtures and four actual geometry-policy cases pass; corrected hosted GUI and larger-screen rendered interactions remain unverified. See [compact layout report](COMPACT-LAYOUT.md). No commits or real removals in this investigation.
+
 ## Confirmed cloud native pass; GUI runtime corrections pending
 
 [Run 40028914665](https://github.com/vadimtanel/MacVentory/actions/runs/40028914665) passed SwiftPM, Xcode application/test compilation, Xcode unit tests, arm64 packaging and artifact validation. The GUI suite actually executed 10 tests with 11 failure records. Full logs and xcresult accessibility/video evidence identify incorrect table/toggle roles and a compact-screen settings sheet whose footer is covered by the Dock. Local corrections preserve all tests and strengthen transition assertions. Local build/fixture tests pass; the corrected GUI suite has not run. See [XCUITest investigation](XCUITEST-INVESTIGATION.md). This supersedes older statements that no hosted Xcode verification has run; it does not claim GUI success.

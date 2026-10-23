@@ -95,8 +95,8 @@ struct InventoryView: View {
         VStack(spacing: 10) {
             Divider()
             HStack(spacing: 18) {
-                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }.controlHelp("Show Settings")
-                Button { showAbout(appearance: model.configuration.appearance) } label: { Label("About", systemImage: "info.circle") }.controlHelp("About Macventory")
+                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }.accessibilityIdentifier("inventory.settings").controlHelp("Show Settings")
+                Button { showAbout(appearance: model.configuration.appearance) } label: { Label("About", systemImage: "info.circle") }.accessibilityIdentifier("inventory.about").controlHelp("About Macventory")
                 Spacer(minLength: 0)
             }.buttonStyle(.plain).padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 18)
         }.background(.bar)
@@ -115,12 +115,30 @@ struct InventoryView: View {
     }
 
     private var inventorySplitView: some View {
-        HSplitView {
-            table.frame(minWidth: 560)
+        GeometryReader { geometry in
             if showDetails, let item = model.items.first(where: { $0.id == selected }) {
-                DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays).id(item.id).frame(minWidth: 270, idealWidth: 300, maxWidth: 380)
+                if geometry.size.width >= 960 {
+                    HSplitView {
+                        table.frame(minWidth: 640)
+                        details(item).frame(minWidth: 270, idealWidth: 300, maxWidth: 380)
+                    }
+                } else {
+                    // A native bottom pane preserves table width and sidebar access on
+                    // compact displays, rather than expanding the entire split view.
+                    VSplitView {
+                        table.frame(minHeight: 150)
+                        details(item, compact: true).frame(minHeight: 150, idealHeight: 210, maxHeight: 260)
+                    }
+                }
+            } else {
+                table
             }
         }
+    }
+
+    private func details(_ item: SoftwareItem, compact: Bool = false) -> some View {
+        DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays, compact: compact)
+            .id(item.id)
     }
 
     private var statusBar: some View {
@@ -144,7 +162,7 @@ struct InventoryView: View {
         }
         ToolbarItemGroup {
             Button { showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease.circle") }.accessibilityIdentifier("inventory.filters").controlHelp("Filter Software").accessibilityLabel("Filter Software")
-            Button { showDetails.toggle() } label: { Label("Details", systemImage: "sidebar.right") }.controlHelp(showDetails ? "Hide Details" : "Show Details").accessibilityLabel(showDetails ? "Hide Details" : "Show Details")
+            Button { showDetails.toggle() } label: { Label("Details", systemImage: "sidebar.right") }.accessibilityIdentifier("inventory.toggleDetails").controlHelp(showDetails ? "Hide Details" : "Show Details").accessibilityLabel(showDetails ? "Hide Details" : "Show Details")
             if model.scanning { Button("Cancel") { model.cancel() }.accessibilityIdentifier("inventory.cancel").controlHelp("Cancel Scan") }
             else { Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.accessibilityIdentifier("inventory.refresh").controlHelp("Refresh Inventory").accessibilityLabel("Refresh Inventory") }
         }

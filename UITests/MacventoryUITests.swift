@@ -2,6 +2,14 @@ import XCTest
 
 @MainActor
 final class MacventoryUITests: XCTestCase {
+    private func clickVisible(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), file: file, line: line)
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed,
+                       "The actual control must be hittable; no coordinate fallback", file: file, line: line)
+        element.click()
+    }
+
     private func inventoryTable(_ app: XCUIApplication) -> XCUIElement {
         // SwiftUI Table is an AXOutline on macOS 26; identify the actual inventory,
         // not the first outline (which is the sidebar) or an assumed AXTable role.
@@ -27,7 +35,14 @@ final class MacventoryUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        // Actual rendered controls must remain inside the native content window.
+        for control in [app.buttons["inventory.settings"], app.buttons["inventory.columns"]] {
+            XCTAssertTrue(control.waitForExistence(timeout: 5))
+            XCTAssertTrue(window.frame.contains(control.frame), "Control extends outside its inventory window")
+            XCTAssertTrue(control.isHittable)
+        }
         return app
     }
     func testStartupSidebarSelectionAndDetails() {
@@ -64,7 +79,7 @@ final class MacventoryUITests: XCTestCase {
         app.typeKey("r", modifierFlags: .command)
         XCTAssertTrue(app.buttons["inventory.cancel"].waitForExistence(timeout: 1))
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
-        app.buttons["Settings"].firstMatch.click()
+        clickVisible(app.buttons["inventory.settings"])
         XCTAssertTrue(app.checkBoxes["Show system applications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.popUpButtons.firstMatch.exists)
     }
@@ -114,7 +129,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.menuItems["Copy Identifier"].exists)
         XCTAssertTrue(app.menuItems["Uninstall…"].exists)
         app.typeKey(.escape, modifierFlags: [])
-        app.buttons["Settings"].click()
+        clickVisible(app.buttons["inventory.settings"])
         app.checkBoxes["Show system applications"].click()
         closeSettings(app, save: true)
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
@@ -127,7 +142,7 @@ final class MacventoryUITests: XCTestCase {
         let app = launch()
         if #available(macOS 14, *) {
             XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
-            app.buttons["inventory.columns"].click()
+            clickVisible(app.buttons["inventory.columns"])
             XCTAssertTrue(app.checkBoxes["Version"].firstMatch.exists)
             app.checkBoxes["Version"].firstMatch.click()
             XCTAssertFalse(inventoryTable(app).buttons["Version"].exists)
@@ -142,20 +157,20 @@ final class MacventoryUITests: XCTestCase {
         for title in ["Version", "Source", "Size", "Installed", "Last Opened", "Name"] {
             let header = table.buttons[title]
             XCTAssertTrue(header.exists)
-            header.click()
+            clickVisible(header)
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
-            header.click()
+            clickVisible(header)
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
         }
         let search = app.searchFields.firstMatch
         search.click(); search.typeText("Example")
-        table.buttons["Size"].click()
+        clickVisible(table.buttons["Size"])
         XCTAssertTrue(table.staticTexts["Example App"].firstMatch.exists)
     }
 
     func testSettingsPagesThresholdInputAndAboutLinks() {
         let app = launch()
-        app.buttons["Settings"].click()
+        clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let days = app.textFields["Recently installed threshold"]
         XCTAssertTrue(days.waitForExistence(timeout: 3))
@@ -166,11 +181,11 @@ final class MacventoryUITests: XCTestCase {
         app.radioButtons["Information"].click()
         XCTAssertTrue(app.buttons["Export Sanitized Diagnostics…"].exists)
         closeSettings(app, save: true)
-        app.buttons["Settings"].click()
+        clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "28")
         closeSettings(app)
-        app.buttons["About"].click()
+        clickVisible(app.buttons["inventory.about"])
         let about = app.windows["About Macventory"]
         XCTAssertTrue(about.waitForExistence(timeout: 3), "About must open after Settings closes")
         XCTAssertTrue(about.links["LinkedIn"].waitForExistence(timeout: 3))
@@ -180,7 +195,7 @@ final class MacventoryUITests: XCTestCase {
 
     func testCancelDiscardsDraftAcrossPages() {
         let app = launch()
-        app.buttons["Settings"].click()
+        clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let field = app.textFields["Recently installed threshold"]
         XCTAssertTrue(field.waitForExistence(timeout: 3))
@@ -190,7 +205,7 @@ final class MacventoryUITests: XCTestCase {
         app.radioButtons["Scanning"].click()
         XCTAssertTrue(app.textFields["Homebrew prefixes"].exists)
         closeSettings(app)
-        app.buttons["Settings"].click()
+        clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "30")
     }
