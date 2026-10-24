@@ -3,17 +3,30 @@ import Darwin
 
 public enum InventoryCommand: Sendable {
     case receipts, receiptInfo(String), receiptFiles(String)
+    case brewInstalled(executable: String, cask: Bool), brewDependents(executable: String, token: String), brewServices(executable: String)
     case ports(executable: String), portContents(executable: String, name: String)
+    case portDependents(executable: String, name: String, version: String), portExactContents(executable: String, name: String, version: String), managerVersion(executable: String)
     case nix(executable: String, profile: String?), legacyNix(executable: String)
 
     public var executable: String {
         switch self {
         case .receipts, .receiptInfo, .receiptFiles: "/usr/sbin/pkgutil"
-        case .ports(let path), .portContents(let path, _), .nix(let path, _), .legacyNix(let path): path
+        case .brewInstalled(let path, _), .brewDependents(let path, _), .brewServices(let path): path
+        case .ports(let path), .portContents(let path, _), .portDependents(let path, _, _), .portExactContents(let path, _, _), .managerVersion(let path), .nix(let path, _), .legacyNix(let path): path
         }
     }
     public func arguments() throws -> [String] {
         switch self {
+        case .brewServices: return ["services", "list", "--json"]
+        case .managerVersion: return ["--version"]
+        case .portDependents(_, let name, let version), .portExactContents(_, let name, let version):
+            guard RemovalIdentity.portName(name), RemovalIdentity.portVersion(version) else { throw ScanError.malformed("Invalid exact port identity") }
+            if case .portDependents = self { return ["-q", "dependents", name, "@" + version] }
+            return ["-q", "contents", name, "@" + version]
+        case .brewInstalled(_, let cask): return ["list", cask ? "--cask" : "--formula", "--versions"]
+        case .brewDependents(_, let token):
+            guard UninstallPlanner.validToken(token) else { throw ScanError.malformed("Invalid formula token") }
+            return ["uses", "--installed", "--recursive", "--", token]
         case .receipts: return ["--pkgs"]
         case .receiptInfo(let id):
             guard FileSystem.validPackageIdentifier(id) else { throw ScanError.malformed("Invalid package identifier") }
@@ -61,9 +74,10 @@ public struct ProcessRunner: CommandRunning {
         let path = command.executable
         let expected: String
         switch command {
+        case .brewInstalled, .brewDependents, .brewServices: expected = "brew"; try HomebrewTrust.validateExecutable(path)
         case .receipts, .receiptInfo, .receiptFiles: expected = "pkgutil"
-        case .ports, .portContents: expected = "port"
-        case .nix: expected = "nix"
+        case .ports, .portContents, .portDependents, .portExactContents: expected = "port"
+        case .nix, .managerVersion: expected = "nix"
         case .legacyNix: expected = "nix-env"
         }
         guard path.hasPrefix("/"), URL(fileURLWithPath: path).lastPathComponent == expected,
@@ -72,7 +86,7 @@ public struct ProcessRunner: CommandRunning {
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = try command.arguments()
         process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-                               "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8", "NIX_PATH": "", "NIX_REMOTE": "", "NIX_CONFIG": "connect-timeout = 1\n"]
+                               "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8", "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1", "HOMEBREW_NO_AUTOREMOVE": "1", "HOMEBREW_NO_INSTALL_CLEANUP": "1", "HOMEBREW_NO_ENV_HINTS": "1", "NIX_PATH": "", "NIX_REMOTE": "", "NIX_CONFIG": "connect-timeout = 1\n"]
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
         // Keep diagnostics out of structured stdout. Failure is reported with exit status.

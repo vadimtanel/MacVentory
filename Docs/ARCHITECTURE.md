@@ -1,5 +1,7 @@
 # Architecture
 
+Current feature behavior, execution-level matrix and validation are documented in [Uninstall execution levels](UNINSTALL_EXECUTION_LEVELS.md). That report supersedes the earlier pass and historical uninstall limits below. Historical build notes remain for context.
+
 Macventory is a SwiftUI macOS application with a small shared Swift module. The Swift package is the primary CLT-compatible build. The checked-in Xcode project references the same sources; it embeds MacventoryCore as a framework. SwiftPM links the core into its executable and the bundling script creates the ordinary .app.
 
 ## Components
@@ -35,3 +37,7 @@ Application deployment target is macOS 13; current Swift Testing tools require m
 ## Controlled uninstall boundary
 
 UninstallPlanner produces an evidence-checked plan. UninstallSession consumes one plan-bound confirmation, FreshUninstallValidator rechecks it, and an injected UninstallExecuting adapter performs simulation or the reviewed production operation. AppModel selects simulation for both QA modes. Discovery scanners never invoke this path. See UNINSTALL.md for source-specific eligibility and pending destructive verification.
+
+## Execution-level continuation
+
+`UninstallPreparationService` resolves per-installation capability; `UninstallLevels` binds level/scope and managed/interactive evidence to the immutable plan. `UninstallExecutionService` dispatches exactly that method after fresh validation, with separate Homebrew, managed MacPorts/Nix, native bundle, signed vendor and Steam adapters. Each has an injected effect boundary. `MacPortsAuthorization` and the narrow privileged helper share exact request validation; discovery never registers the helper. Unsupported profile/provider/effect contracts become justified guides. See [execution levels and validation](UNINSTALL_EXECUTION_LEVELS.md) for deployment and untested real-provider limits.

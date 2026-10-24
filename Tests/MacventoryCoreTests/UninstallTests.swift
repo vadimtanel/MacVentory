@@ -101,7 +101,7 @@ struct UninstallTests {
     }
     @Test func receiptsAndOtherManagersNeverBecomeBundleDeletion() throws {
         let box = try Sandbox.removal(); defer { box.clean() }
-        for source in [InstallSource.pkg, .steam, .setapp, .toolbox, .macPorts, .nix, .homebrewFormula] {
+        for source in [InstallSource.steam, .setapp, .toolbox, .macPorts, .nix, .homebrewFormula] {
             var item = try standalone(box); item.primarySource = source; item.sources = [.init(source, Evidence("Fixture"))]
             #expect(reviewPlan(for: item).method == .external)
         }
@@ -118,6 +118,7 @@ struct UninstallTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: box.root.appendingPathComponent("bin/brew").path)
         var item = try NativeScanner.item(at: path); item.primarySource = .homebrewCask; item.packageID = "example"
         item.sources = [.init(.homebrewCask, Evidence("Fixture receipt"))]
+        item.health = .init(.verified, "Synthetic manager verified installed", registration: .installed, artifacts: [.init(path, .present)])
         item.attributes["Homebrew receipt"] = box.root.appendingPathComponent(receipt + "/INSTALL_RECEIPT.json").path
         item.attributes["Homebrew executable"] = box.root.appendingPathComponent("bin/brew").path
         let plan = reviewPlan(for: item)

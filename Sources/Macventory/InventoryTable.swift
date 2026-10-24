@@ -20,6 +20,7 @@ struct CustomizableInventoryTable: View {
                     .popover(isPresented: $showColumns) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Show Columns").font(.headline)
+                            Toggle("Status", isOn: visibility("health")).controlHelp("Show or hide installation status")
                             Toggle("Version", isOn: visibility("version")).controlHelp("Show or hide the Version column")
                             Toggle("Source", isOn: visibility("source")).controlHelp("Show or hide the Source column")
                             Toggle("Size", isOn: visibility("size")).controlHelp("Show or hide the Size column")
@@ -32,6 +33,7 @@ struct CustomizableInventoryTable: View {
             }.padding(.horizontal, 10).padding(.vertical, 4)
             Table(rows, selection: $selection, sortOrder: $sortOrder, columnCustomization: currentCustomization) {
                 TableColumn("Name", sortUsing: InventoryComparator(.name)) { item in HStack(spacing: 9) { AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"]); Text(item.name).lineLimit(1).help(item.name); if item.stale { Image(systemName: "clock").help("Cached / Stale") } }.padding(.vertical, 3).pointingControl() }.width(min: 160, ideal: 220)
+                TableColumn("Status", sortUsing: InventoryComparator(.health)) { InstallationHealthBadge(item: $0).frame(maxWidth: .infinity) }.width(min: 52, ideal: 58).customizationID("health")
                 TableColumn("Version", sortUsing: InventoryComparator(.version)) { Text($0.version ?? "Not Available").lineLimit(1).help($0.version ?? "Version Not Available") }.width(min: 75, ideal: 100).customizationID("version")
                 TableColumn("Source", sortUsing: InventoryComparator(.source)) { Text($0.primarySource.title).lineLimit(1).help($0.primarySource.title) }.width(min: 120, ideal: 165).customizationID("source")
                 TableColumn("Size", sortUsing: InventoryComparator(.size)) { Text(Display.size($0)).monospacedDigit().help($0.sizeMetric) }.width(min: 85, ideal: 100).customizationID("size")

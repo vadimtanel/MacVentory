@@ -2,6 +2,67 @@ import XCTest
 
 @MainActor
 final class MacventoryUITests: XCTestCase {
+    func testInstallationHealthOrphanPreviewAndSimulatedResult() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--qa-health-scenarios"]
+        app.launch()
+        let table = inventoryTable(app)
+        XCTAssertTrue(table.buttons["Status"].exists)
+        let sidebar = app.descendants(matching: .any).matching(identifier: "inventory.sidebar").firstMatch
+        let attention = sidebar.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Attention Required")).firstMatch
+        try clickVisible(attention)
+        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: "macventory").firstMatch
+        try clickVisible(row)
+        let uninstallButton = app.buttons["inventory.uninstall"]
+        try clickVisible(uninstallButton)
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        let uninstall = sheet.checkBoxes["management.uninstall"]
+        XCTAssertEqual(uninstall.label, "Remove Orphaned Installation")
+        XCTAssertTrue(uninstall.isEnabled)
+        XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled)
+        try clickVisible(uninstall)
+        try clickVisible(sheet.checkBoxes["management.acknowledge"])
+        try clickVisible(sheet.buttons["management.confirm"])
+        XCTAssertTrue(sheet.staticTexts.containing(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "No application, process or data was changed", "No application, process or data was changed")).firstMatch.waitForExistence(timeout: 5))
+        try clickVisible(sheet.buttons["management.ok"])
+        XCTAssertFalse(sheet.exists)
+        XCTAssertTrue(table.exists)
+    }
+
+    func testExplicitExecutionLevelsAndInteractiveVerification() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--qa-execution-levels"]
+        app.launch()
+        let table = inventoryTable(app)
+        func preview(_ name: String, level: String, enabled: Bool) throws {
+            let row = table.children(matching: .outlineRow).containing(.staticText, identifier: name).firstMatch
+            try clickVisible(row)
+            try clickVisible(app.buttons["inventory.uninstall"])
+            let sheet = app.sheets.firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+            let badge = sheet.descendants(matching: .any).matching(identifier: "uninstall.level").firstMatch
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", level), object: badge)
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+            XCTAssertEqual(sheet.checkBoxes["management.uninstall"].isEnabled, enabled)
+        }
+        try preview("Example App", level: "Direct Uninstall", enabled: true)
+        try clickVisible(app.sheets.buttons["management.cancel"])
+        try preview("Interactive Vendor Example", level: "Interactive Uninstall", enabled: true)
+        let sheet = app.sheets.firstMatch
+        try clickVisible(sheet.checkBoxes["management.uninstall"])
+        XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled)
+        try clickVisible(sheet.checkBoxes["management.acknowledge"])
+        try clickVisible(sheet.buttons["management.confirm"])
+        try clickVisible(sheet.buttons["management.verifyRemoval"])
+        XCTAssertTrue(sheet.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Waiting for User", "Waiting for User")).firstMatch.waitForExistence(timeout: 5))
+        try clickVisible(sheet.buttons["management.ok"])
+        try preview("Partial Removal Example", level: "Guided Only", enabled: false)
+        try clickVisible(app.sheets.buttons["management.cancel"])
+        try preview("Example System Component", level: "Protected / Blocked", enabled: false)
+        try clickVisible(app.sheets.buttons["management.cancel"])
+    }
+
     private func clickVisible(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) throws {
         let target = try XCTUnwrap(element.waitForExistence(timeout: 5) ? element : nil,
                                   "The control must exist before clicking", file: file, line: line)

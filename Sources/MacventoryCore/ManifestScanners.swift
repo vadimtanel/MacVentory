@@ -56,6 +56,7 @@ public struct SteamScanner: SoftwareScanner {
     public var allowExternal: Bool
     public init(root: String = "~/Library/Application Support/Steam", allowExternal: Bool = false) { self.root = FileSystem.canonical(root); self.allowExternal = allowExternal }
     public func scan() async throws -> ScanResult {
+        if ArtifactObservation.inspect(root).presence == .inaccessible { throw ScanError.permission }
         guard FileSystem.exists(root) else { return ScanResult(source, state: .notInstalled) }
         var libraries = Set([root]), warnings: [String] = [], items: [SoftwareItem] = []
         let libraryFile = root + "/steamapps/libraryfolders.vdf"
@@ -75,11 +76,19 @@ public struct SteamScanner: SoftwareScanner {
                 try Task.checkCancellation()
                 do {
                     guard let record = try KeyValues.parse(FileSystem.text(file.path))["AppState"]?.object,
-                          let id = record["appid"]?.text, id.allSatisfy(\.isNumber),
+                          let id = record["appid"]?.text, !id.isEmpty, id.allSatisfy(\.isNumber),
                           let directory = record["installdir"]?.text, !directory.isEmpty else { throw ScanError.malformed("Missing Steam app fields") }
                     let path = steamapps + "/common/" + directory
-                    guard FileSystem.contained(path, in: steamapps + "/common"), FileSystem.exists(path) else { warnings.append("Manifest \(id): payload missing"); continue }
+                    guard FileSystem.contained(path, in: steamapps + "/common") else { throw ScanError.malformed("Invalid Steam library path") }
                     var item = SoftwareItem(name: record["name"]?.text ?? "Steam \(id)", kind: .game, source: .steam, path: path, packageID: id, evidence: Evidence("Steam local appmanifest and existing game directory"))
+                    item.health = InstallationHealthClassifier.classify(item, registration: .installed)
+                    if item.health?.artifacts.first?.presence == .missing {
+                        item.kind = .package; item.path = nil
+                        item.id = "record:steam:" + id + ":" + library
+                    }
+                    item.attributes["Steam library"] = library
+                    item.attributes["Steam manifest"] = file.path
+                    item.attributes["Steam root"] = root
                     item.attributes["Steam build ID"] = record["buildid"]?.text ?? "Unknown"
                     if let timestamp = record["LastUpdated"]?.text.flatMap(Double.init), timestamp > 0 { item.updatedAt = Date(timeIntervalSince1970: timestamp) }
                     item.evidence["updatedAt"] = Evidence("Steam LastUpdated", confidence: .inferred, explanation: "Update timestamp, not an installation date")
@@ -102,6 +111,7 @@ public struct SetappScanner: SoftwareScanner {
     public var roots: [String]
     public init(roots: [String] = ["/Applications/Setapp", "~/Applications/Setapp"]) { self.roots = roots }
     public func scan() async throws -> ScanResult {
+        if roots.contains(where: { ArtifactObservation.inspect(FileSystem.canonical($0)).presence == .inaccessible }) { throw ScanError.permission }
         let available = roots.map(FileSystem.canonical).filter(FileSystem.exists)
         guard !available.isEmpty else { return ScanResult(source, state: .notInstalled) }
         let discoveries = try await NativeScanner(roots: available).scan()
@@ -130,6 +140,7 @@ public struct ToolboxScanner: SoftwareScanner {
         let settings = try? FileSystem.json(managementRoot + "/.settings.json")
         var discoveryRoots = roots
         if let location = settings?["install_location"] as? String, location.hasPrefix("/"), URL(fileURLWithPath: location).pathComponents.count > 2 { discoveryRoots.append(location) }
+        if discoveryRoots.contains(where: { ArtifactObservation.inspect(FileSystem.canonical($0)).presence == .inaccessible }) { throw ScanError.permission }
         let available = discoveryRoots.map(FileSystem.canonical).filter(FileSystem.exists)
         var items: [SoftwareItem] = []
         let discoveries = try await NativeScanner(roots: available).scan()
@@ -155,7 +166,12 @@ public struct ToolboxScanner: SoftwareScanner {
                 guard let text = try? FileSystem.text(script.path, limit: 65_536) else { continue }
                 for path in Self.launcherPaths(text) {
                     launcherSeen = true
-                    guard var item = try? NativeScanner.item(at: path), item.bundleID?.hasPrefix("com.jetbrains.") == true else { continue }
+                    guard var item = try? NativeScanner.item(at: path), item.bundleID?.hasPrefix("com.jetbrains.") == true else {
+                        var reference = SoftwareItem(name: script.lastPathComponent + " (Toolbox reference)", kind: .package, source: .toolbox, packageID: script.path, evidence: Evidence("Generated Toolbox launcher reference", confidence: .inferred))
+                        reference.attributes["Toolbox launcher"] = script.path
+                        reference.health = .init(.unverified, "Generated launcher references an unavailable IDE. Toolbox registration is not authenticated; review the exact version in Toolbox.", artifacts: [ArtifactObservation.inspect(path)])
+                        items.append(reference); continue
+                    }
                     item.primarySource = source
                     item.sources = [.init(source, Evidence("Toolbox-generated launcher: " + script.path, confidence: .inferred, explanation: "Explicit generated-script marker and exact existing IDE target; association is not authenticated ownership"))]
                     item.attributes["Toolbox detection"] = "Modern generated launcher"
@@ -164,7 +180,7 @@ public struct ToolboxScanner: SoftwareScanner {
             }
         }
         let present = FileSystem.exists(managementRoot) || FileSystem.exists("/Applications/JetBrains Toolbox.app") || !items.isEmpty
-        return ScanResult(source, items: InventoryMerger.merge(items), state: !present && !launcherSeen ? .notInstalled : items.isEmpty ? .unsupported : nil,
+        return ScanResult(source, items: InventoryMerger.merge(items), state: discoveries.report.state == .failed ? .failed : !present && !launcherSeen ? .notInstalled : items.isEmpty ? .unsupported : nil,
             message: "Legacy layout and modern Toolbox-generated launcher association (inferred). Missing launchers/unknown script layouts remain unsupported; scripts are never executed.")
     }
     public static func launcherPaths(_ text: String) -> [String] {

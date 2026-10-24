@@ -199,7 +199,7 @@ struct ScannerTests {
         let absent = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
         #expect(absent.report.state == .notInstalled)
         try FileManager.default.createDirectory(at: box.root.appendingPathComponent("Cellar"), withIntermediateDirectories: true)
-        let empty = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
+        let empty = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path], runner: StubRunner(outputs: ["list --formula --versions": Data()])).scan()
         #expect(empty.report.state == .empty)
     }
     @Test func malformedNativeBundleDoesNotHideValidApps() async throws {
@@ -208,7 +208,8 @@ struct ScannerTests {
         try box.write("Broken.app/Contents/Info.plist", "not a plist")
         let result = try await NativeScanner(roots: [box.root.path]).scan()
         #expect(result.report.state == .failed)
-        #expect(result.items.count == 1)
+        #expect(result.items.count == 2)
+        #expect(result.items.contains { $0.name == "Broken" && $0.installationHealth.status == .attention })
     }
     @Test func missingAdditionalProvidersAreNotInstalled() async throws {
         let root = "/private/tmp/macventory-missing-" + UUID().uuidString
@@ -289,7 +290,9 @@ struct ScannerTests {
         #expect(throws: (any Error).self) { try NixScanner.parse(Data("{\"invalid\":42}".utf8)) }
         #expect(throws: (any Error).self) { try NixScanner.parse(Data("not json".utf8)) }
         let absent = try NixScanner.parse(Data("{\"elements\":{\"hello\":{\"storePaths\":[\"/nix/store/absent-test\"]}}}".utf8))
-        #expect(absent.isEmpty)
+        #expect(absent.count == 1)
+        #expect(absent.first?.installationHealth.status == .attention)
+        #expect(absent.first?.health?.registration == .installed)
     }
     @Test func keyValuesEscapesNestingAndErrors() throws {
         let value = try KeyValues.parse("// Comment\n\"root\" { \"name\" \"Space Ω\" \"nested\" { \"x\" \"y\" } }")

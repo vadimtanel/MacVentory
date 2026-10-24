@@ -1,5 +1,7 @@
 # Single-application uninstall
 
+Current feature behavior, execution-level matrix and validation are documented in [Uninstall execution levels](UNINSTALL_EXECUTION_LEVELS.md). That report supersedes the earlier pass and historical uninstall limits below. Historical build notes remain for context.
+
 Build107 clarifies whole-folder targeting: the selected directory URL, including its contents, is submitted as one native Trash target. It does not submit only child files or remove unselected parent directories. Permission errors now distinguish reading the target, checking parent writability and Finder rejection with underlying domain/code. Review access in macOS Privacy & Security yourself; no automatic grants, elevation or bypass are implemented. A readable directory can still be protected against modification.
 
 ## Build106 cleanup and optional personal locations

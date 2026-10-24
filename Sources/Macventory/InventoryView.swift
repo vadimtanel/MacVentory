@@ -51,7 +51,7 @@ struct InventoryView: View {
                     .searchable(text: $search, prompt: "Search software, identifiers, paths…")
                     .toolbar { inventoryToolbar }
                     .sheet(item: $managementPresentation, onDismiss: { model.closeManagement() }) { presentation in
-                        ManagementView(presentation: presentation).id(presentation.id)
+                        ManagementView(presentation: presentation, onReviewLeftovers: { managementPresentation = nil; model.closeManagement(); navigation = ["leftovers"] }).id(presentation.id)
                     }
                     .onAppear { headerSort = [InventoryComparator(InventorySortKey(rawValue: model.configuration.defaultSort) ?? .name)] }
                     .onChange(of: rows.map(\.id)) { ids in if let selected, !ids.contains(selected) { self.selected = nil } }
@@ -67,7 +67,7 @@ struct InventoryView: View {
     private var sidebar: some View {
         List(selection: Binding(get: { navigation }, set: { navigation = InventoryCategorySelection.normalized($0, previous: navigation) })) {
             Section("Library") { ForEach([LibraryView.all, .apps, .packages], id: \.rawValue) { libraryRow($0) } }
-            Section("Smart Views") { ForEach([LibraryView.unused, .large, .recent, .unknown], id: \.rawValue) { libraryRow($0) } }
+            Section("Smart Views") { ForEach([LibraryView.attention, .unused, .large, .recent, .unknown], id: \.rawValue) { libraryRow($0) } }
             Section("Cleanup") {
                 Label("Leftover Data", systemImage: "externaldrive.badge.questionmark").tag("leftovers").pointingControl()
             }
@@ -235,6 +235,7 @@ struct InventoryView: View {
                     }
                 }.padding(.vertical, 3).pointingControl()
             }.width(min: 160, ideal: 220)
+            TableColumn("Status", sortUsing: InventoryComparator(.health)) { InstallationHealthBadge(item: $0).frame(maxWidth: .infinity) }.width(min: 52, ideal: 58)
             TableColumn("Version", sortUsing: InventoryComparator(.version)) { Text($0.version ?? "Not Available").help($0.version ?? "Version Not Available").foregroundStyle($0.version == nil ? .secondary : .primary).lineLimit(1) }.width(min: 75, ideal: 100)
             TableColumn("Source", sortUsing: InventoryComparator(.source)) { Text($0.primarySource.title).lineLimit(1).help($0.primarySource.title) }.width(min: 120, ideal: 165)
             TableColumn("Size", sortUsing: InventoryComparator(.size)) { Text(Display.size($0)).monospacedDigit().help($0.sizeMetric) }.width(min: 85, ideal: 100)
@@ -248,7 +249,7 @@ struct InventoryView: View {
     }
 }
 
-extension LibraryView { var id: String { switch self { case .all: "all"; case .apps: "apps"; case .packages: "packages"; case .unused: "unused"; case .large: "large"; case .recent: "recent"; case .unknown: "unknown" } } }
+extension LibraryView { var id: String { switch self { case .attention: "attention"; case .all: "all"; case .apps: "apps"; case .packages: "packages"; case .unused: "unused"; case .large: "large"; case .recent: "recent"; case .unknown: "unknown" } } }
 
 struct AppIcon: View {
     let path: String?
@@ -295,6 +296,7 @@ struct FilterView: View {
                 Picker("Kind", selection: $filter.kind) { Text("Any").tag(nil as SoftwareKind?); ForEach(SoftwareKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) } }.controlHelp("Filter applications, games or packages")
                 Picker("Confidence", selection: $filter.confidence) { Text("Any").tag(nil as Confidence?); ForEach(Confidence.allCases, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) } }.controlHelp("Filter by metadata confidence")
             }
+            Picker("Installation Status", selection: $filter.healthStatus) { Text("Any").tag(nil as InstallationStatus?); ForEach(InstallationStatus.allCases, id: \.self) { Text($0.title).tag(Optional($0)) } }.controlHelp("Filter by verified installation health")
             HStack {
                 TextField("Minimum MB", text: $sizeMB).frame(width: 140).onChange(of: sizeMB) { filter.minimumSize = Int64($0).flatMap { $0 >= 0 && $0 <= Int64.max / 1_000_000 ? $0 * 1_000_000 : nil } }.controlHelp("Minimum logical size in megabytes")
                 Toggle("Missing metadata", isOn: $filter.missingOnly).controlHelp("Show only software with missing metadata")

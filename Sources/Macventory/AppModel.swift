@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
         configuration = fixtureMode ? ScanConfiguration() : (UserDefaults.standard.data(forKey: "configuration").flatMap { try? JSONDecoder().decode(ScanConfiguration.self, from: $0) }) ?? ScanConfiguration()
         cache = SnapshotStore(directory: fixtureMode ? FileManager.default.temporaryDirectory.appendingPathComponent("Macventory-Isolated-" + UUID().uuidString) : nil)
         identityStore = ApplicationIdentityStore(directory: fixtureMode ? Self.fixtureRoot.appendingPathComponent("IdentityStore") : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Macventory"))
+        if fixtureMode && (Bundle.main.object(forInfoDictionaryKey: "MacventoryHealthQA") as? Bool == true || (ProcessInfo.processInfo.arguments.contains("--qa-health-scenarios") || ProcessInfo.processInfo.arguments.contains("--qa-execution-levels"))) { configuration.showSystem = true }
         if fixtureMode {
             items = demoMode ? DemoInventory.items() : Self.fixtures(); progress = demoMode ? "Synthetic demonstration · local software is not scanned" : "Fixture inventory"
             if ProcessInfo.processInfo.arguments.contains("--ui-test-error") { error = "Simulated scanner failure — synthetic QA fixture. Existing inventory is retained." }
@@ -154,22 +155,10 @@ final class AppModel: ObservableObject {
         uninstallMessage = nil; uninstallOutcome = nil; uninstallPlan = plan
         uninstallPreparing = true
         uninstallTask = Task {
-            var failure: String?
-            var reviewed = plan
-            if item.primarySource == .unmanaged, item.sources.allSatisfy({ $0.source == .unmanaged }), !item.isSystem, !running {
-                do {
-                    let checker: any StandaloneRemovalChecking = fixtureMode ? SimulatedStandaloneChecker(roots: [Self.fixtureRoot.path]) : StandaloneRemovalChecker(configuration: configuration)
-                    let eligibility = try await checker.check(item)
-                    try Task.checkCancellation()
-                    reviewed = UninstallPlanner.plan(for: item, running: running, standaloneEligibility: eligibility)
-                } catch is CancellationError { return }
-                catch {
-                    failure = "Move to Trash unavailable: " + error.localizedDescription
-                }
-            }
+            let checker: any StandaloneRemovalChecking = fixtureMode ? SimulatedStandaloneChecker(roots: [Self.fixtureRoot.path]) : StandaloneRemovalChecker(configuration: configuration)
+            let reviewed = await UninstallPreparationService(configuration: configuration, bundles: checker).prepare(item, running: running)
             guard !Task.isCancelled, uninstallPlan?.id == plan.id else { return }
-            uninstallPreparing = false; uninstallMessage = failure
-            uninstallPlan = reviewed
+            uninstallPreparing = false; uninstallMessage = nil; uninstallPlan = reviewed
             await uninstallSession.prepare(reviewed)
         }
     }
@@ -190,7 +179,7 @@ final class AppModel: ObservableObject {
                 let outcome = try await uninstallSession.confirm(id: plan.id, acknowledged: acknowledged)
                 uninstallOutcome = outcome
                 uninstallMessage = outcome.completionMessage
-                if outcome == .completed { try? await removedStore.record(RemovedApplicationRecord(item: plan.item)); await reloadLeftoverRecords(); refresh() }
+                if [.completed, .verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved].contains(outcome) { try? await removedStore.record(RemovedApplicationRecord(item: plan.item)); await reloadLeftoverRecords(); refresh() }
             } catch { uninstallMessage = "Operation did not complete: \(error.localizedDescription). Refresh before preparing a new confirmation." }
         }
     }
@@ -206,17 +195,33 @@ final class AppModel: ObservableObject {
         managementUninstallPlan = UninstallPlanner.plan(for: reviewedItem)
         let service = dataDiscoveryService, configuration = configuration, isolated = fixtureMode, root = Self.fixtureRoot.path
         managementPreparation = Task {
+            if reviewedItem.installationHealth.status == .protected { managementPreparing = false; return }
             let discovery = await Task.detached(priority: .utility) { service.discover(for: ApplicationIdentity(item: reviewedItem)) }.value
             guard !Task.isCancelled, managementID == token else { return }
             managementDiscovery = discovery
-            do {
-                guard reviewedItem.primarySource == .unmanaged, reviewedItem.sources.allSatisfy({ $0.source == .unmanaged }) else { managementPreparing = false; return }
-                let checker: any StandaloneRemovalChecking = isolated ? SimulatedStandaloneChecker(roots: [root]) : StandaloneRemovalChecker(configuration: configuration)
-                let eligibility = try await checker.check(reviewedItem)
-                guard !Task.isCancelled, managementID == token else { return }
-                managementUninstallPlan = UninstallPlanner.plan(for: reviewedItem, running: false, standaloneEligibility: eligibility)
-            } catch { if managementID == token { managementMessage = error.localizedDescription } }
+            let checker: any StandaloneRemovalChecking = isolated ? SimulatedStandaloneChecker(roots: [root]) : StandaloneRemovalChecker(configuration: configuration)
+            let resolver = UninstallPreparationService(configuration: configuration, bundles: checker, vendors: isolated ? QAVendorFinder(root: root) : LocalVendorUninstallerFinder())
+            let prepared = await resolver.prepare(reviewedItem)
+            guard !Task.isCancelled, managementID == token else { return }
+            managementUninstallPlan = prepared
             if managementID == token { managementPreparing = false }
+        }
+    }
+    func verifyInteractiveRemoval() {
+        guard let plan = managementUninstallPlan, plan.executionLevel == .interactive, !managementWorking else { return }
+        managementWorking = true
+        Task {
+            let outcome: UninstallOutcome = qaProtected ? .waitingForUser : await Task.detached { InteractiveRemovalVerification.verify(plan) }.value
+            managementResult = ManagementResult(steps: [.init(.uninstall, [.verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved].contains(outcome) ? .completed : outcome == .waitingForUser ? .waitingForUser : outcome == .partialRemoval ? .partial : .unknown, outcome.completionMessage)], simulated: qaProtected)
+            if !qaProtected { refreshAfterManagement = true }
+            managementWorking = false
+        }
+    }
+    func openRemovalInstructions(for item: SoftwareItem) {
+        guard !qaProtected, let url = SourceRemovalGuide.forItem(item).documentation else { return }
+        Task {
+            do { let verified = try await OfficialRemovalDocumentation.resolve(url); NSWorkspace.shared.open(verified) }
+            catch { managementMessage = error.localizedDescription }
         }
     }
     func closeManagement() {
@@ -322,6 +327,7 @@ final class AppModel: ObservableObject {
                     refreshAfterManagement = true
                 }
             }
+            if request.operations.contains(.uninstall) && !qaProtected { refreshAfterManagement = true }
             reconcileCleanupResult(result)
             managementResult = result
         }
@@ -466,6 +472,48 @@ final class AppModel: ObservableObject {
         if arguments.contains("--ui-testing") && arguments.contains("--ui-testing-header-sorts") {
             return [app, cli, protected]
         }
+        if arguments.contains("--qa-execution-levels") || arguments.contains("--qa-health-scenarios") || Bundle.main.object(forInfoDictionaryKey: "MacventoryHealthQA") as? Bool == true {
+            app.health = .init(.verified, "Synthetic bundle and executable verified", artifacts: [.init(app.path!, .present)])
+            cli.health = .init(.verified, "Synthetic CLI-only manager package; no app is expected", registration: .installed)
+            var missing = SoftwareItem(name: "macventory", kind: .package, source: .homebrewCask, packageID: "macventory")
+            missing.version = "1.0.0"; missing.id += ":synthetic"
+            let expected = fixtureRoot.appendingPathComponent("Applications/Macventory.app").path
+            let managerRoot = fixtureRoot.appendingPathComponent("Homebrew")
+            let receipt = managerRoot.appendingPathComponent("Caskroom/macventory/.metadata/INSTALL_RECEIPT.json")
+            let config = receipt.deletingLastPathComponent().appendingPathComponent("config.json")
+            try? FileManager.default.createDirectory(at: receipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let receiptObject: [String: Any] = ["source": ["version": "1.0.0"], "uninstall_artifacts": [["app": ["Macventory.app"]]]]
+            try? JSONSerialization.data(withJSONObject: receiptObject).write(to: receipt)
+            try? JSONSerialization.data(withJSONObject: ["explicit": ["appdir": (expected as NSString).deletingLastPathComponent]]).write(to: config)
+            let brew = managerRoot.appendingPathComponent("bin/brew")
+            try? FileManager.default.createDirectory(at: brew.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data("Synthetic inert manager file; never executed".utf8).write(to: brew)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: brew.path)
+            missing.attributes["Homebrew executable"] = brew.path
+            missing.attributes["Homebrew receipt"] = receipt.path
+            missing.attributes["Expected application paths"] = expected
+            missing.health = .init(.attention, "Application Missing — Homebrew Registration Remains. Synthetic installed token macventory, version 1.0.0; expected bundle is absent. Running QA copy is separate.", registration: .installed, artifacts: [.init(expected, .missing)])
+            var historical = SoftwareItem(name: "nui-app installer receipt", kind: .package, source: .pkg, packageID: "org.example.nui")
+            historical.health = .init(.historical, "Synthetic receipt records a build-time path; it does not prove an installed application.", registration: .receiptOnly, artifacts: [.init("/Users/runner/work/nui/nui/build/bin/nui-app.app", .missing)])
+            var unknown = SoftwareItem(name: "Unverified Example", source: .unknown)
+            unknown.health = .init(.unverified, "Synthetic permission denial; no absence inferred")
+            var partial = SoftwareItem(name: "Partial Removal Example", kind: .package, source: .steam, packageID: "123")
+            partial.health = .init(.partial, "Synthetic previous removal left manager components; review Steam")
+            var examples = [app, cli, missing, historical, unknown, partial, protected]
+            if arguments.contains("--qa-execution-levels") || Bundle.main.object(forInfoDictionaryKey: "MacventoryLevelsQA") as? Bool == true {
+                let vendorDirectory = fixtureRoot.appendingPathComponent("Vendor")
+                try? FileManager.default.createDirectory(at: vendorDirectory, withIntermediateDirectories: true)
+                let vendorApp = vendorDirectory.appendingPathComponent("Managed Example.app")
+                if !FileSystem.exists(vendorApp.path) { try? FileManager.default.copyItem(at: directory.deletingLastPathComponent(), to: vendorApp) }
+                let tool = vendorDirectory.appendingPathComponent("Uninstaller.app")
+                if !FileSystem.exists(tool.path) { try? FileManager.default.copyItem(at: directory.deletingLastPathComponent(), to: tool) }
+                var vendor = app; vendor.name = "Interactive Vendor Example"; vendor.path = FileSystem.canonical(vendorApp.path)
+                vendor.id = SoftwareItem.identity(path: vendor.path, source: .unmanaged, packageID: "org.example.vendor")
+                vendor.health = .init(.verified, "Synthetic bundle and executable verified", artifacts: [.init(vendor.path!, .present)])
+                vendor.attributes["QA strategy"] = "interactive"; examples.append(vendor)
+            }
+            return examples
+        }
         return [app, running, cli, protected]
     }
 }
@@ -485,4 +533,16 @@ enum Display {
         item.sizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? item.state("sizeBytes")
     }
     static func copy(_ text: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+}
+
+private struct QAVendorFinder: VendorUninstallerFinding {
+    let root: String
+    func find(for item: SoftwareItem) -> VendorUninstallerCandidate? {
+        guard item.attributes["QA strategy"] == "interactive" else { return nil }
+        return VendorUninstallerDiscovery.discover(for: item, checker: QASigning(root: root))
+    }
+}
+private struct QASigning: VendorIdentityChecking {
+    let root: String
+    func teamIdentifier(at path: String) -> String? { FileSystem.contained(path, in: root) ? "SYNTHETIC_QA_ONLY" : nil }
 }

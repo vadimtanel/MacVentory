@@ -29,10 +29,11 @@ struct UninstallView: View {
                         Text("Installed path").font(.headline)
                         Text(plan.item.path ?? "Not Available").font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
+                    UninstallLevelPreview(plan: plan)
                     Text(plan.operation).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
                     Text(plan.explanation).fixedSize(horizontal: false, vertical: true)
                     if plan.canExecute {
-                        Text("User data, preferences and dependencies are retained. No force, zap or automatic cleanup. Cancellation after an operation starts cannot guarantee rollback.").font(.callout).foregroundStyle(.secondary)
+                        Text(plan.scope == .vendorDefined ? "Review the official tool’s scope and data choices yourself. Launching it is not removal verification." : "Optional remaining-data cleanup is separate. No force, zap or automatic cleanup. Cancellation after an operation starts cannot guarantee rollback.").font(.callout).foregroundStyle(.secondary)
                     }
                     if let executable = plan.executable {
                         DisclosureGroup("Operation details") {

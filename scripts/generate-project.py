@@ -42,6 +42,7 @@ products = []
 target_ids = []
 for name, directory, product_type, extension in [
     ("MacventoryCore", "Sources/MacventoryCore", "framework", "framework"),
+    ("MacventoryPrivilegedHelper", "Sources/MacventoryPrivilegedHelper", "tool", ""),
     ("Macventory", "Sources/Macventory", "application", "app"),
     ("MacventoryTests", "Tests/MacventoryCoreTests", "bundle.unit-test", "xctest"),
     ("MacventoryUITests", "UITests", "bundle.ui-testing", "xctest"),
@@ -51,12 +52,12 @@ for name, directory, product_type, extension in [
         reference = add(str(path.relative_to(ROOT)), {"isa": "PBXFileReference", "lastKnownFileType": "sourcecode.swift", "path": str(path.relative_to(ROOT)), "sourceTree": "SOURCE_ROOT"})
         source_refs.append(reference)
         files.append(build_file(name, reference))
-    product = add(name + "Product", {"isa": "PBXFileReference", "explicitFileType": "wrapper.framework" if extension == "framework" else "wrapper.application" if extension == "app" else "wrapper.cfbundle", "path": name + "." + extension, "sourceTree": "BUILT_PRODUCTS_DIR", "includeInIndex": 0})
+    product = add(name + "Product", {"isa": "PBXFileReference", "explicitFileType": "wrapper.framework" if extension == "framework" else "wrapper.application" if extension == "app" else "compiled.mach-o.executable" if extension == "" else "wrapper.cfbundle", "path": name + ("." + extension if extension else ""), "sourceTree": "BUILT_PRODUCTS_DIR", "includeInIndex": 0})
     products.append(product)
     phases = [add(name + "Sources", {"isa": "PBXSourcesBuildPhase", "buildActionMask": 2147483647, "files": files, "runOnlyForDeploymentPostprocessing": 0})]
     links = []
     dependencies = []
-    if name in ["Macventory", "MacventoryTests"]:
+    if name in ["Macventory", "MacventoryTests", "MacventoryPrivilegedHelper"]:
         links.append(build_file(name + "Link", ref("MacventoryCoreProduct")))
         dependencies.append(add(name + "CoreDependency", {"isa": "PBXTargetDependency", "target": ref("MacventoryCoreTarget")}))
     if name in ["MacventoryTests", "MacventoryUITests"]:
@@ -64,6 +65,13 @@ for name, directory, product_type, extension in [
     phases.append(add(name + "Frameworks", {"isa": "PBXFrameworksBuildPhase", "buildActionMask": 2147483647, "files": links, "runOnlyForDeploymentPostprocessing": 0}))
     resources = []
     if name == "Macventory":
+        dependencies.append(add("HelperDependency", {"isa": "PBXTargetDependency", "target": ref("MacventoryPrivilegedHelperTarget")}))
+        helper_copy = add("EmbedHelper", {"isa": "PBXBuildFile", "fileRef": ref("MacventoryPrivilegedHelperProduct"), "settings": {"ATTRIBUTES": ["CodeSignOnCopy"]}})
+        phases.append(add("EmbedHelperPhase", {"isa": "PBXCopyFilesBuildPhase", "buildActionMask": 2147483647, "dstPath": "", "dstSubfolderSpec": 6, "files": [helper_copy], "name": "Embed MacPorts Helper", "runOnlyForDeploymentPostprocessing": 0}))
+        helper_plist = "Resources/Helpers/org.vadimtanel.Macventory.macports-helper.plist"
+        helper_ref = add(helper_plist, {"isa": "PBXFileReference", "lastKnownFileType": "text.plist.xml", "path": helper_plist, "sourceTree": "SOURCE_ROOT"})
+        source_refs.append(helper_ref)
+        phases.append(add("EmbedHelperPlist", {"isa": "PBXCopyFilesBuildPhase", "buildActionMask": 2147483647, "dstPath": "Contents/Library/LaunchDaemons", "dstSubfolderSpec": 1, "files": [build_file("MacventoryHelperPlist", helper_ref)], "name": "Embed Helper Configuration", "runOnlyForDeploymentPostprocessing": 0}))
         embed = add("EmbedCore", {"isa": "PBXBuildFile", "fileRef": ref("MacventoryCoreProduct"), "settings": {"ATTRIBUTES": ["CodeSignOnCopy", "RemoveHeadersOnCopy"]}})
         phases.append(add("EmbedFrameworks", {"isa": "PBXCopyFilesBuildPhase", "buildActionMask": 2147483647, "dstPath": "", "dstSubfolderSpec": 10, "files": [embed], "name": "Embed Frameworks", "runOnlyForDeploymentPostprocessing": 0}))
         for filename in ["LICENSE", "NOTICE", "Resources/Macventory.icns", "Resources/ToolbarMark.png"]:
@@ -77,6 +85,8 @@ for name, directory, product_type, extension in [
                 "GENERATE_INFOPLIST_FILE": "YES", "ENABLE_APP_SANDBOX": "NO", "SWIFT_STRICT_CONCURRENCY": "complete"}
     if name == "Macventory":
         settings.update({"GENERATE_INFOPLIST_FILE": "NO", "INFOPLIST_FILE": "Resources/Info.plist", "ENABLE_HARDENED_RUNTIME": "YES"})
+    if name == "MacventoryPrivilegedHelper":
+        settings.update({"PRODUCT_BUNDLE_IDENTIFIER": "org.vadimtanel.Macventory.macports-helper", "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES", "SKIP_INSTALL": "YES", "ENABLE_HARDENED_RUNTIME": "YES"})
     if name == "MacventoryCore":
         settings.update({"DEFINES_MODULE": "YES", "SKIP_INSTALL": "YES", "INSTALL_PATH": "$(LOCAL_LIBRARY_DIR)/Frameworks"})
     if name == "MacventoryTests":

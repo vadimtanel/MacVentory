@@ -1,6 +1,6 @@
 import Foundation
 
-public enum InventorySortKey: String, CaseIterable, Sendable { case name, version, source, size, installed, opened }
+public enum InventorySortKey: String, CaseIterable, Sendable { case name, version, source, health, size, installed, opened }
 
 /// One comparator shared by native table headers and inventory queries.
 /// Nil placement and identity tie breaks do not reverse with the primary direction.
@@ -27,6 +27,7 @@ public struct InventoryComparator: SortComparator, Sendable {
         func natural<T: Comparable>(_ a: T, _ b: T) -> ComparisonResult { a == b ? .orderedSame : a < b ? .orderedAscending : .orderedDescending }
         let result: ComparisonResult?
         switch key {
+        case .health: result = directed(lhs.installationHealth.status.title.localizedStandardCompare(rhs.installationHealth.status.title))
         case .name: result = directed(lhs.name.localizedStandardCompare(rhs.name))
         case .source: result = directed(lhs.primarySource.title.localizedStandardCompare(rhs.primarySource.title))
         case .version:

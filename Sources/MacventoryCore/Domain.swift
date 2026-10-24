@@ -74,6 +74,7 @@ public struct SoftwareItem: Codable, Identifiable, Sendable, Equatable {
     public var attributes: [String: String] = [:]
     public var scannedAt: Date = Date()
     public var stale: Bool = false
+    public var health: InstallationHealth? = nil
     public init(name: String, kind: SoftwareKind = .app, source: InstallSource = .unmanaged, path: String? = nil, packageID: String? = nil, evidence: Evidence = Evidence("Filesystem")) {
         self.name = name; self.kind = kind; self.primarySource = source; self.path = path.map(FileSystem.canonical)
         self.packageID = packageID; self.sources = [.init(source, evidence)]
@@ -149,6 +150,7 @@ public struct ScanConfiguration: Codable, Sendable, Equatable {
 
 public enum LibraryView: String, CaseIterable, Sendable {
     case all = "All Software", apps = "Applications", packages = "CLI & Packages"
+    case attention = "Attention Required"
     case unused = "Possibly Unused", large = "Large Applications", recent = "Recently Installed", unknown = "Unknown Metadata"
 }
 public struct InventoryFilter: Sendable {
@@ -161,6 +163,7 @@ public struct InventoryFilter: Sendable {
     public var openedAfter: Date?
     public var openedBefore: Date?
     public var missingOnly = false
+    public var healthStatus: InstallationStatus?
     public var confidence: Confidence?
     public var showSystem = false
     public var systemOnly = false
@@ -170,6 +173,7 @@ public struct InventoryFilter: Sendable {
         if !showSystem && item.isSystem { return false }
         if systemOnly && !item.isSystem { return false }
         if let source, !(source == .unknown ? item.primarySource == .unknown : item.sources.contains(where: { $0.source == source })) { return false }
+        if let healthStatus, healthStatus != item.installationHealth.status { return false }
         if let kind, kind != item.kind { return false }
         if let confidence, confidence != item.confidence { return false }
         if let minimumSize, item.sizeBytes.map({ $0 >= minimumSize }) != true { return false }
@@ -185,6 +189,7 @@ public struct InventoryFilter: Sendable {
         }
         switch view {
         case .all: return true
+        case .attention: return [.attention, .partial].contains(item.installationHealth.status)
         case .apps: return item.kind == .app || item.kind == .game
         case .packages: return item.kind != .app && item.kind != .game
         case .unknown: return missing

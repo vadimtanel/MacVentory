@@ -152,8 +152,20 @@ public struct LiveManagementExecutor: ManagementExecuting {
             return .init(operation, outcome.stepStatus, outcome.summary, cleanupResults: outcome.results)
         case .uninstall:
             guard let plan = request.uninstallPlan else { throw ScanError.process("Missing reviewed uninstall plan.") }
-            _ = try await LiveUninstallExecutor().execute(plan)
-            return .init(operation, .completed, "Refresh the inventory to verify the remaining installation state.")
+            let outcome = try await LiveUninstallExecutor().execute(plan)
+            let status: ManagementStepStatus
+            switch outcome {
+            case .verifiedRemoved, .packageRegistrationRemoved, .appBundleRemoved, .alreadyAbsent: status = .completed
+            case .partialRemoval, .remainingDataFound: status = .partial
+            case .waitingForUser, .authorizationRequired: status = .waitingForUser
+            case .unknownResult: status = .unknown
+            default: status = .failed
+            }
+            var detail = outcome.completionMessage
+            if plan.method == .homebrewCask, plan.item.path == nil, [.failed, .partialRemoval].contains(outcome) {
+                detail += " The reviewed application artifact was already missing, and the expected manager/artifact state was not fully reconciled. Normal Homebrew removal can refuse a missing artifact. No force, cleanup or Caskroom editing was attempted. Review the official recovery guidance and prepare a new confirmation for any different operation."
+            }
+            return .init(operation, status, detail)
         }
     }
 }
