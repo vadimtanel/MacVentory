@@ -76,6 +76,30 @@ public struct HomebrewScanner: SoftwareScanner {
             }
         }
         if items.isEmpty {
+            // Some casks (including locally-built or older releases) have no
+            // `uninstall_artifacts.app` entry. Their installed bundle is still
+            // retained one level below the cask version directory. Read that
+            // local bundle so it remains an application—with its real icon—
+            // rather than a generic package-only record.
+            for versionDirectory in try FileSystem.children(root) where versionDirectory.hasDirectoryPath {
+                for candidate in try FileSystem.children(versionDirectory.path)
+                    where candidate.pathExtension.lowercased() == "app" {
+                    guard FileSystem.exists(candidate.appendingPathComponent("Contents/Info.plist").path) else { continue }
+                    var item = try NativeScanner.item(at: candidate.path)
+                    item.primarySource = .homebrewCask
+                    item.sources = [.init(.homebrewCask, Evidence("Homebrew cask receipt and Caskroom application bundle"))]
+                    item.packageID = token
+                    item.attributes["Homebrew receipt"] = metadata + "/INSTALL_RECEIPT.json"
+                    item.attributes["Payload"] = "Caskroom application bundle"
+                    item.attributes["Homebrew executable"] = URL(fileURLWithPath: root).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("bin/brew").path
+                    item.attributes["Manager version"] = source?["version"] as? String ?? "Unknown"
+                    item.installedAt = FileSystem.date(receipt["time"])
+                    item.evidence["installedAt"] = Evidence("Homebrew INSTALL_RECEIPT.json time", availability: item.installedAt == nil ? .notAvailable : .available, explanation: "Recorded cask installation; app may subsequently self-update")
+                    items.append(item)
+                }
+            }
+        }
+        if items.isEmpty {
             var item = SoftwareItem(name: token, kind: .package, source: .homebrewCask, packageID: FileSystem.canonical(root), evidence: Evidence("Homebrew cask receipt", explanation: "Receipt present; installed application payload not mapped"))
             item.version = source?["version"] as? String
             item.attributes["Payload"] = "Not verified; receipt record only"

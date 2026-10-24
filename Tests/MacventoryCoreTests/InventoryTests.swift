@@ -244,6 +244,21 @@ struct ScannerTests {
         #expect(orphan.first?.path == nil)
         #expect(orphan.first?.kind == .package)
     }
+    @Test func caskroomBundleFallbackKeepsApplicationPath() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let prefix = "Caskroom/fallback-app"
+        let path = try box.app(prefix + "/1.0.0/Fallback.app", id: "org.example.fallback", name: "Fallback Display")
+        try box.write(prefix + "/.metadata/INSTALL_RECEIPT.json", "{\"time\":1700000000,\"source\":{\"version\":\"1.0.0\"}}")
+
+        let items = try HomebrewScanner.cask(box.root.appendingPathComponent(prefix).path)
+
+        #expect(items.count == 1)
+        #expect(items.first?.name == "Fallback Display")
+        #expect(items.first?.path == FileSystem.canonical(path))
+        #expect(items.first?.kind == .app)
+        #expect(items.first?.primarySource == .homebrewCask)
+        #expect(items.first?.attributes["Payload"] == "Caskroom application bundle")
+    }
     @Test func appStoreEmptyWithoutReceipts() async throws {
         let box = try Sandbox(); defer { box.clean() }
         _ = try box.app()
