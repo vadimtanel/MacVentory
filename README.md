@@ -6,9 +6,19 @@
 
 A free, native macOS application for understanding installed software: where it came from, which version is present, how much space its payload uses, and what is known about installation and usage dates.
 
+## Download Macventory v1.0.0
+
+Macventory v1.0.0 is the first officially published release. See the [official release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0).
+
+- [**DMG — Recommended**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.dmg)
+- [**ZIP — Alternative**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.zip)
+- [**SHA-256 Checksums**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.sha256)
+
+[All Releases](https://github.com/vadimtanel/MacVentory/releases) · [Installation instructions](#installation)
+
 [Official repository](https://github.com/vadimtanel/MacVentory) · [Created by Vadim Tanel](https://www.linkedin.com/in/vadim-tanel/) · [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Apple Silicon first · macOS 13+ deployment target · Development candidate**
+**Apple Silicon · macOS 13+ deployment target · Latest Release: v1.0.0**
 
 ![Actual Macventory app in Light Mode with fictional demonstration records](Docs/Screenshots/macventory-inventory-light.png)
 
@@ -66,15 +76,36 @@ Two discoveries of the same physical app can become one row. Separate copies and
 
 ## Installation
 
-Version **1.0.0** is prepared locally; no GitHub Release has been published by this execution. Download binaries only from the [official project's Releases page](https://github.com/vadimtanel/MacVentory/releases) once the owner publishes them.
+### Recommended DMG installation
 
-**DMG:** open `Macventory-1.0.0-arm64.dmg`, drag Macventory onto the Applications shortcut, eject the disk, then launch Macventory from Applications or Spotlight. The disk contains the complete app and a visual installation guide. No command-line installation or administrator helper is required.
+1. [Download the v1.0.0 DMG](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.dmg).
+2. Open `Macventory-1.0.0-arm64.dmg`.
+3. Drag Macventory.app onto the Applications shortcut.
+4. Eject the disk image.
+5. Launch Macventory from Applications or Spotlight.
+
+The disk contains the complete app and a visual installation guide. No command-line installation or administrator helper is required.
 
 ![Actual Finder installation window](Docs/Screenshots/macventory-installer.png)
 
-**ZIP:** extract `Macventory-1.0.0-arm64.zip`, then copy Macventory.app into Applications. End-user Macs do not need SwiftPM, Xcode or development files.
+### Alternative ZIP installation
 
-Compare the download's SHA-256 with the checksum file from the same official release. You can calculate it with macOS `shasum -a 256` if comfortable using Terminal; checksum verification is separate from installation. A checksum detects a mismatch but does not independently establish who published the file.
+1. [Download the v1.0.0 ZIP](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.zip).
+2. Extract `Macventory-1.0.0-arm64.zip` to obtain Macventory.app.
+3. Move Macventory.app into Applications.
+4. Launch the application.
+
+End-user Macs do not need SwiftPM, Xcode or development files.
+
+### Integrity verification
+
+Download the [SHA-256 checksum file](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.sha256) from the same official release. If comfortable using Terminal, calculate the downloaded artifact's checksum with:
+
+```sh
+shasum -a 256 <filename>
+```
+
+Replace `<filename>` with the downloaded DMG or ZIP filename and compare the result with its entry in the checksum file. Checksum verification is separate from installation. A checksum detects a mismatch but does not independently establish who published the file.
 
 ### First launch and Gatekeeper
 
@@ -127,19 +158,19 @@ There is no bulk uninstall, force, zap, automatic dependency cleanup, elevation 
 
 After success, a read-only result offers one **OK** button. The production message places the refresh instruction on a separate line; simulation explicitly reports that nothing was removed.
 
-**Real destructive execution remains unverified.** Tests validate plans, confirmation and injected simulation, never actual removal. Demo records cannot be uninstalled. Read [uninstall boundaries](Docs/UNINSTALL.md) before evaluating this development feature.
+**Real destructive execution remains unverified.** Tests validate plans, confirmation and injected simulation, never actual removal. Demo records cannot be uninstalled. Read [uninstall boundaries](Docs/UNINSTALL.md) before using this feature.
 
 ## Application management and Leftover Data
 
 Cleanup moves each selected folder whole, including its contents; parent folders and unselected locations remain. Leftover Data shows whether personal-folder discovery is enabled and links directly to Scanning Settings. Permission failures identify the failed check or Finder request and provide access guidance. Macventory cannot grant itself macOS privacy access or guarantee that protected container cleanup will be allowed.
 
-Build106 adds individual cleanup results: **No Longer Exists** means the target was already absent and Macventory did not delete it. Confirmed missing targets leave the active list immediately; permission failures, changed targets and unknown Finder outcomes remain distinct. Partial scans also reconcile retained observations, without interpreting access errors as missing files. Unknown Trash outcomes are never automatically retried.
+Individual cleanup results distinguish missing targets: **No Longer Exists** means the target was already absent and Macventory did not delete it. Confirmed missing targets leave the active list immediately; permission failures, changed targets and unknown Finder outcomes remain distinct. Partial scans also reconcile retained observations, without interpreting access errors as missing files. Unknown Trash outcomes are never automatically retried.
 
 If a friendly name is unavailable, a distinctive folder name may provide a bounded lead through the final identifier component. The UI explains that this association is uncertain; broad names are excluded, ambiguous matches stay protected, and the suggestion never establishes ownership or a product name.
 
-Under **Settings → Scanning**, **Discover related folders in Documents, Downloads and Desktop** is off by default. When enabled, bounded direct-child searches suggest folders using known local application names or exact identifiers. These remain **Possible Related Files — Manual Review Required**, excluded from Select All Verified Data. Each needs individual selection, exact-path review and confirmation. Shared, ambiguous, linked or unsafe locations stay blocked. A folder name is never proof of exclusive ownership. This opt-in capability supersedes the no-personal-location-scanning statement below.
+Under **Settings → Scanning**, **Discover related folders in Documents, Downloads and Desktop** is off by default. When enabled, bounded direct-child searches suggest folders using known local application names or exact identifiers. These remain **Possible Related Files — Manual Review Required**, excluded from Select All Verified Data. Each needs individual selection, exact-path review and confirmation. Shared, ambiguous, linked or unsafe locations stay blocked. A folder name is never proof of exclusive ownership.
 
-Application identity correction: friendly names are retained separately from installed inventory in a local `application-identities.json` index (schema 1, 4,000 records, 4 MiB, two-year retention). Records contain identifiers, names, optional vendor, parent relationship, source and last observation, without installation paths or usage history. Existing snapshot name evidence is migrated before refresh. Local removal records and exact-ID preference/manifests also supply names. Grouping now requires recorded embedded-bundle parent relationships, superseding the product-name association rule below: equal display names or identifier prefixes never merge products. Unresolved names display distinct identifiers. Naming never upgrades ownership or cleanup eligibility.
+Application identity correction: friendly names are retained separately from installed inventory in a local `application-identities.json` index (schema 1, 4,000 records, 4 MiB, two-year retention). Records contain identifiers, names, optional vendor, parent relationship, source and last observation, without installation paths or usage history. Existing snapshot name evidence is migrated before refresh. Local removal records and exact-ID preference/manifests also supply names. Grouping requires recorded embedded-bundle parent relationships: equal display names or identifier prefixes never merge products. Unresolved names display distinct identifiers. Naming never upgrades ownership or cleanup eligibility.
 
 The context menu retains Copy Identifier, Reveal in Finder, Copy Path and Uninstall…. **Force Quit** appears only for a safely matched running app. Matching uses canonical bundle URL, bundle identifier, process identifier and launch time; process exit must be observed before later steps proceed. Unsaved changes may be lost. Quit normally from the app to save work first. System components and Macventory’s own process are protected.
 
@@ -147,7 +178,7 @@ The context menu retains Copy Identifier, Reveal in Finder, Copy Path and Uninst
 
 **Leftover Data** lists only groups with discovered, existing candidates. Minimal removal history is retained separately and does not create empty cleanup entries. A general scan of supported Library sources discovers exact preference/cache/container/support/saved-state identifiers and bounded local manifests, even without a previous inventory record or app bundle. There are no product-specific discovery hints. Installed and reinstalled applications are excluded using inventory and Launch Services. Retrospective associations and stale history remain possible-only; absence of an app is not proof of exclusive ownership.
 
-The default **Group by: Application** view combines only identities with a reliable human-readable association; raw identifier resemblance never joins groups. **Identifier** retains the technical one-identifier view. Search and confidence filters operate in both views. **Select All Verified Data** excludes possible, personal, shared and protected data. Possible-related files may be selected one at a time only after reviewing their exact path and confirmation warning. **Move Selected to Trash** opens a separate path-by-path review with a checkbox. A partial scan names the affected locations and blocks only candidates in those locations; independently verified targets remain subject to the same fresh ownership, identity and installed-app checks. Failed or cancelled scans require a retry. Documents, Downloads, Desktop and external volumes are not swept; individually nominated personal subfolders within the current home can be reviewed. Broad home/Library roots, application bundles and linked paths are rejected.
+The default **Group by: Application** view combines identities only when recorded embedded-bundle parent relationships establish the association; equal display names or raw identifier resemblance never join groups. **Identifier** retains the technical one-identifier view. Search and confidence filters operate in both views. **Select All Verified Data** excludes possible, personal, shared and protected data. Possible-related files may be selected one at a time only after reviewing their exact path and confirmation warning. **Move Selected to Trash** opens a separate path-by-path review with a checkbox. A partial scan names the affected locations and blocks only candidates in those locations; independently verified targets remain subject to the same fresh ownership, identity and installed-app checks. Failed or cancelled scans require a retry. Documents, Downloads and Desktop discovery is limited to the opt-in direct-child searches described above; external volumes are not swept. Individually nominated personal subfolders within the current home can also be reviewed. Broad home/Library roots, application bundles and linked paths are rejected.
 
 Combined operations validate targets first, verify Force Quit, move approved data to Trash, then perform eligible uninstall. Failures stop later steps and preserve individual results. A Finder request that times out is reported as unknown and may still finish; the UI remains dismissible and does not retry automatically. Success uses “Operation completed.” with a separate operation-specific explanation; simulation always states that nothing changed.
 
@@ -179,8 +210,6 @@ bash scripts/build-app.sh release
 open build/Macventory.app
 ```
 
-Application source will only be available remotely after an owner-approved initial application commit/push. Until then, use the reviewed local checkout.
-
 Development commands:
 
 ```sh
@@ -205,7 +234,7 @@ The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 2
 | Too few rows | Clear search/filters, check category and Show system applications. Counts reflect visibility rules. |
 | Settings do not persist | Use Done. Cancel/window close intentionally discard the draft. |
 | Removal is unsupported | Follow the displayed manager/vendor guidance. Do not bypass ownership or protection checks. |
-| A downloaded app is blocked | This candidate is not notarized. Review the warning and the supported per-app Open Anyway procedure above, if you independently trust the download. |
+| A downloaded app is blocked | Macventory v1.0.0 is ad-hoc signed and not Apple-notarized. Review the warning and the supported per-app Open Anyway procedure above, if you independently trust the download. |
 
 ## Contributing
 
@@ -223,4 +252,4 @@ Redistributors must follow Apache 2.0's notice/license/change-marking requiremen
 
 The native app, scanners, combined filtering, six-header sorting, settings transactions, demo isolation and conservative uninstall planning are implemented. Local package tests and actual GUI evidence are recorded in [Verification](Docs/VERIFICATION.md).
 
-Xcode build/XCUITest and hosted CI are not yet verified here. Full VoiceOver navigation has not been performed. Minimum-OS execution, clean-machine Gatekeeper behavior and real destructive uninstall behavior remain pending. Intel is optional, not a release requirement. This is a local review candidate, **not a fully verified public binary release**.
+Xcode build/XCUITest and hosted CI are not yet verified here. Full VoiceOver navigation has not been performed. Minimum-OS execution, clean-machine Gatekeeper behavior and real destructive uninstall behavior remain pending. Intel is optional, not a release requirement. Macventory v1.0.0 is officially published; these outstanding checks remain unverified in this documentation.
