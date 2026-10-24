@@ -225,10 +225,15 @@ final class AppModel: ObservableObject {
         try? Data("Synthetic fixture; never executed".utf8).write(to: binary)
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         app.version = "1.2.3"; app.bundleID = "org.example.app"; app.sizeBytes = 2_000_000_000
-        app.lastOpenedAt = Date().addingTimeInterval(-200 * 86400)
+        // Fixed UTC fixture dates; both rows must meaningfully reverse for every header.
+        app.installedAt = Date(timeIntervalSince1970: 1_577_836_800) // 2020-01-01
+        app.lastOpenedAt = Date(timeIntervalSince1970: 1_704_067_200) // 2024-01-01
         app.evidence["lastOpenedAt"] = Evidence("Fixture Spotlight", confidence: .inferred)
         var cli = SoftwareItem(name: "example-tool", kind: .package, source: .homebrewFormula, path: "/opt/homebrew/Cellar/example-tool/1.0", packageID: "example-tool")
         cli.version = "1.0"
+        cli.sizeBytes = 100_000_000
+        cli.installedAt = Date(timeIntervalSince1970: 1_609_459_200) // 2021-01-01
+        cli.lastOpenedAt = Date(timeIntervalSince1970: 1_672_531_200) // 2023-01-01
         var protected = SoftwareItem(name: "Example System Component", source: .unmanaged, path: "/System/Applications/Example System Component.app")
         protected.isSystem = true; protected.bundleID = "com.apple.example.synthetic"
         return [app, cli, protected]

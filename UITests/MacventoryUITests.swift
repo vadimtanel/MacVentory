@@ -52,6 +52,88 @@ final class MacventoryUITests: XCTestCase {
         return table
     }
 
+    private func inventoryRowNames(_ table: XCUIElement) -> [String] {
+        table.children(matching: .outlineRow).allElementsBoundByIndex.map { row in
+            let names = ["Example App", "example-tool"].filter { row.staticTexts[$0].exists }
+            return names.count == 1 ? names[0] : "<unexpected inventory row>"
+        }
+    }
+
+    private func clickNativeHeader(_ title: String, in app: XCUIApplication, phase: String,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
+        var clicked = false
+        defer { if !clicked { recordHeaderState(app, phase: phase + " — click precondition failed") } }
+        _ = try XCTUnwrap(["Name", "Version", "Source", "Size", "Installed", "Last Opened"].contains(title) ? title : nil,
+                          "This interaction helper is restricted to native inventory headers", file: file, line: line)
+        let table = inventoryTable(app)
+        let window = app.windows.firstMatch
+        _ = try XCTUnwrap(window.waitForExistence(timeout: 5) ? window : nil, file: file, line: line)
+        // Resolve the current proxy for every interaction, including after reordering.
+        let header = table.buttons[title]
+        _ = try XCTUnwrap(header.waitForExistence(timeout: 5) ? header : nil, file: file, line: line)
+        let nestedScroll = table.scrollViews.firstMatch
+        let viewport = nestedScroll.exists ? nestedScroll : app.scrollViews.containing(.any, identifier: "inventory.table").firstMatch
+        _ = try XCTUnwrap(viewport.exists ? viewport : nil, "Resolve the actual table viewport", file: file, line: line)
+        let frame = header.frame
+        let bounds = [window.frame, table.frame, viewport.frame]
+        let coordinate = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let point = coordinate.screenPoint
+        // macOS 26.6.2/Xcode 26.5 reports Source false despite successful actual
+        // pointer sorting. Record this value; never catch/retry a failed click.
+        let diagnostic = XCTAttachment(string: "phase=\(phase) header=\(title) exists=\(header.exists) " +
+            "hittable=\(header.isHittable) state=\(app.state.rawValue) frame=\(frame) " +
+            "window/table/viewport=\(bounds) element-relative point=\(point)")
+        diagnostic.name = phase + " — native header mouse geometry"
+        diagnostic.lifetime = .keepAlways
+        add(diagnostic)
+        _ = try XCTUnwrap(app.state == .runningForeground && frame.width > 0 && frame.height > 0 &&
+            point.x.isFinite && point.y.isFinite && frame.contains(point) &&
+            bounds.allSatisfy { $0.contains(frame) && $0.contains(point) } ? header : nil,
+            "The header and its element-relative click point must be inside the foreground window, inventory and viewport",
+            file: file, line: line)
+        coordinate.click()
+        clicked = true
+    }
+
+    private func assertInventoryOrder(_ expected: [String], in app: XCUIApplication, phase: String,
+                                      changedFrom previous: [String]? = nil,
+                                      file: StaticString = #filePath, line: UInt = #line) throws {
+        let table = inventoryTable(app)
+        let rows = table.children(matching: .outlineRow)
+        // Wait for both expected names at their actual row positions, rather
+        // than accepting a first-row-only or comparator-derived ordering check.
+        let ordered = expected.enumerated().map { index, name in
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"),
+                                      object: rows.element(boundBy: index).staticTexts[name])
+        }
+        let result = XCTWaiter.wait(for: ordered, timeout: 5)
+        if result != .completed { recordHeaderState(app, phase: phase + " — order wait failed") }
+        _ = try XCTUnwrap(result == .completed ? table : nil,
+                          "Wait for the complete expected native row order: \(expected)", file: file, line: line)
+        let names = inventoryRowNames(table)
+        let selected = rows.containing(.staticText, identifier: "Example App").firstMatch
+        let appSelected = selected.exists && selected.isSelected
+        let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
+        let identifierPreserved = details.staticTexts["org.example.app"].exists
+        let copyAvailable = app.buttons["Copy Identifier"].exists
+        let changed = previous.map { names != $0 } ?? true
+        let outcome = XCTAttachment(string: "phase=\(phase) expected=\(expected) actual=\(names) " +
+            "previous=\(String(describing: previous)) rowCount=\(rows.count) " +
+            "Example App selected=\(appSelected) Details identity=\(identifierPreserved) Copy Identifier=\(copyAvailable)")
+        outcome.name = phase + " — native row order and selection"
+        outcome.lifetime = .keepAlways
+        add(outcome)
+        if rows.count != 2 || names != expected || !changed || !appSelected || !identifierPreserved || !copyAvailable {
+            recordHeaderState(app, phase: phase + " — sorting or selection assertion failed")
+        }
+        XCTAssertEqual(rows.count, 2, "Exactly two fictional inventory rows are required", file: file, line: line)
+        XCTAssertEqual(names, expected, phase + " must match both independent expected row names", file: file, line: line)
+        if let previous { XCTAssertNotEqual(names, previous, phase + " must visibly change row order", file: file, line: line) }
+        XCTAssertTrue(appSelected, "Example App's actual inventory row must remain selected", file: file, line: line)
+        XCTAssertTrue(identifierPreserved, "Details must retain org.example.app", file: file, line: line)
+        XCTAssertTrue(copyAvailable, "Copy Identifier must remain available", file: file, line: line)
+    }
+
     private func closeSettings(_ app: XCUIApplication, save: Bool = false) {
         let sheet = app.sheets.firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 3))
@@ -190,31 +272,41 @@ final class MacventoryUITests: XCTestCase {
         table.staticTexts["Example App"].firstMatch.click()
         XCTAssertTrue(app.buttons["Copy Identifier"].waitForExistence(timeout: 3))
         recordHeaderState(app, phase: "after selection and Details")
-        for title in ["Version", "Source", "Size", "Installed", "Last Opened", "Name"] {
-            let header = table.buttons[title]
-            XCTAssertTrue(header.exists)
-            try clickVisible(header)
-            XCTAssertTrue(app.buttons["Copy Identifier"].exists)
-            XCTAssertTrue(app.staticTexts["org.example.app"].exists)
-            if title == "Version" || title == "Source" {
-                let firstName = title == "Version" ? "example-tool" : "Example App"
-                XCTAssertTrue(table.children(matching: .outlineRow).element(boundBy: 0).staticTexts[firstName].exists,
-                              "The first native row must reflect ascending " + title + " sorting")
-            }
-            recordHeaderState(app, phase: title + " ascending")
-            try clickVisible(header)
-            XCTAssertTrue(app.buttons["Copy Identifier"].exists)
-            XCTAssertTrue(app.staticTexts["org.example.app"].exists)
-            if title == "Version" || title == "Source" {
-                let firstName = title == "Version" ? "Example App" : "example-tool"
-                XCTAssertTrue(table.children(matching: .outlineRow).element(boundBy: 0).staticTexts[firstName].exists,
-                              "The first native row must reflect descending " + title + " sorting")
-            }
-            recordHeaderState(app, phase: title + " descending")
+        let appThenTool = ["Example App", "example-tool"]
+        let toolThenApp = ["example-tool", "Example App"]
+        // Independent fixture expectations: never ask the production comparator
+        // to calculate this test's expected result.
+        let cases: [(String, [String], [String])] = [
+            ("Name", appThenTool, toolThenApp),
+            ("Version", toolThenApp, appThenTool),
+            ("Source", appThenTool, toolThenApp),
+            ("Size", toolThenApp, appThenTool),
+            ("Installed", appThenTool, toolThenApp),
+            ("Last Opened", toolThenApp, appThenTool)
+        ]
+        try assertInventoryOrder(appThenTool, in: app, phase: "initial name order")
+        for (title, ascending, descending) in cases {
+            // The anchor is a different column with the opposite ascending
+            // order. In this sequence it is either inactive or was last left
+            // descending, so one real click establishes its ascending order.
+            let anchor = ascending == appThenTool ? "Version" : "Source"
+            try clickNativeHeader(anchor, in: app, phase: title + " opposite-order setup")
+            try assertInventoryOrder(descending, in: app, phase: title + " opposite-order setup")
+            let before = inventoryRowNames(table)
+            try clickNativeHeader(title, in: app, phase: title + " ascending")
+            try assertInventoryOrder(ascending, in: app, phase: title + " ascending", changedFrom: before)
+            let afterAscending = inventoryRowNames(table)
+            try clickNativeHeader(title, in: app, phase: title + " descending")
+            try assertInventoryOrder(descending, in: app, phase: title + " descending", changedFrom: afterAscending)
         }
         let search = app.searchFields.firstMatch
         search.click(); search.typeText("Example")
-        try clickVisible(table.buttons["Size"])
+        XCTAssertEqual(search.value as? String, "Example")
+        try clickNativeHeader("Source", in: app, phase: "post-search opposite-order setup")
+        try assertInventoryOrder(appThenTool, in: app, phase: "post-search opposite-order setup")
+        let beforeSearchSort = inventoryRowNames(table)
+        try clickNativeHeader("Size", in: app, phase: "post-search Size ascending")
+        try assertInventoryOrder(toolThenApp, in: app, phase: "post-search Size ascending", changedFrom: beforeSearchSort)
         XCTAssertTrue(table.staticTexts["Example App"].firstMatch.exists)
     }
 
