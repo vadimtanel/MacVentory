@@ -31,10 +31,13 @@ Two discoveries of the same physical app can become one row. Separate copies and
 - Recently Installed, Possibly Unused, Large Applications and Unknown Metadata smart views.
 - Local snapshot cache, progressive scans, cancellation, sanitized diagnostics and settings drafts.
 - Single-application uninstall previews with plan-bound confirmation, fresh ownership checks and conservative source-specific eligibility.
+- Application management: verified-process Quit/Force Quit, source-aware Clear App Data, and a dedicated **Leftover Data** view for residual data after removal.
 
 ## Screenshots
 
 [Light inventory](Docs/Screenshots/macventory-inventory-light.png) · [Dark inventory](Docs/Screenshots/macventory-inventory-dark.png) · [Settings](Docs/Screenshots/macventory-settings.png) · [About](Docs/Screenshots/macventory-about.png)
+
+[Leftover Data overview with synthetic QA candidates](Docs/Screenshots/macventory-leftover-data.png)
 
 <details><summary>Dark Mode</summary>
 
@@ -81,6 +84,8 @@ A download may be blocked. Attempt to open it and inspect the warning. If you in
 
 ## Quick start
 
+Command-click inventory sidebar categories to combine them. The table includes software matching any selected category, then applies search and filters; overlapping installations appear once. Selecting All Software resets the selection. Leftover Data remains a separate page.
+
 1. Open Macventory. With Scan on launch enabled, the app refreshes automatically; otherwise choose **Refresh Inventory**.
 2. Browse Library, Smart Views or an installation source. Sidebar counts exclude hidden system apps; the footer distinguishes shown and total records.
 3. Search by name, identifier or path. Open **Filter Software** to narrow results further.
@@ -114,7 +119,7 @@ See the [supported-source matrix](Docs/SOURCE_SUPPORT.md). Missing, empty, unsup
 
 ## Uninstall
 
-Double-click a row, press Return on the selected row, or choose **Uninstall…** to review its full name, icon, version, installed path, source, operation and retained data. Check the operation-specific review checkbox and choose **Homebrew Uninstall** or **Move to Trash**; no name typing is required. Opening a preview never starts removal. Unsupported packages, protected components and demo records show safe guidance with Uninstall disabled. Ownership, running status, target fingerprint and confirmation age are checked again immediately before execution.
+Double-click a row, press Return, or choose **Uninstall…** to open the application-management dialog, titled with the application name. Select independently eligible **Force Quit**, **Clear App Data**, and **Uninstall** actions, review the exact targets and warnings, then check the review checkbox and confirm. The final button names the selected actions. Opening the dialog never starts an operation. Results use operation-specific status and one **OK** button, which fully dismisses the sheet; completed actions cannot be submitted again.
 
 Only a narrow verified app-only Homebrew cask mapping currently qualifies for managed removal. Scripts, extra removal artifacts, ambiguous ownership, protected components, running apps and stale evidence block execution or receive external guidance. Eligible standalone unmanaged bundles directly in `/Applications` or your `~/Applications` folder can be moved to recoverable Trash using Finder’s native API after separate bundle and fresh manager-ownership checks. Inferred source alone never authorizes this; linked, protected, running, stale, installer/manager-owned and service-bearing bundles are excluded. App Store apps retain external guidance. Trash removes only the bundle, not its external data or a complete vendor installation. PKG receipts do not define a safe inverse installation operation; vendor/manager workflows are explained instead.
 
@@ -123,6 +128,28 @@ There is no bulk uninstall, force, zap, automatic dependency cleanup, elevation 
 After success, a read-only result offers one **OK** button. The production message places the refresh instruction on a separate line; simulation explicitly reports that nothing was removed.
 
 **Real destructive execution remains unverified.** Tests validate plans, confirmation and injected simulation, never actual removal. Demo records cannot be uninstalled. Read [uninstall boundaries](Docs/UNINSTALL.md) before evaluating this development feature.
+
+## Application management and Leftover Data
+
+Cleanup moves each selected folder whole, including its contents; parent folders and unselected locations remain. Leftover Data shows whether personal-folder discovery is enabled and links directly to Scanning Settings. Permission failures identify the failed check or Finder request and provide access guidance. Macventory cannot grant itself macOS privacy access or guarantee that protected container cleanup will be allowed.
+
+Build106 adds individual cleanup results: **No Longer Exists** means the target was already absent and Macventory did not delete it. Confirmed missing targets leave the active list immediately; permission failures, changed targets and unknown Finder outcomes remain distinct. Partial scans also reconcile retained observations, without interpreting access errors as missing files. Unknown Trash outcomes are never automatically retried.
+
+If a friendly name is unavailable, a distinctive folder name may provide a bounded lead through the final identifier component. The UI explains that this association is uncertain; broad names are excluded, ambiguous matches stay protected, and the suggestion never establishes ownership or a product name.
+
+Under **Settings → Scanning**, **Discover related folders in Documents, Downloads and Desktop** is off by default. When enabled, bounded direct-child searches suggest folders using known local application names or exact identifiers. These remain **Possible Related Files — Manual Review Required**, excluded from Select All Verified Data. Each needs individual selection, exact-path review and confirmation. Shared, ambiguous, linked or unsafe locations stay blocked. A folder name is never proof of exclusive ownership. This opt-in capability supersedes the no-personal-location-scanning statement below.
+
+Application identity correction: friendly names are retained separately from installed inventory in a local `application-identities.json` index (schema 1, 4,000 records, 4 MiB, two-year retention). Records contain identifiers, names, optional vendor, parent relationship, source and last observation, without installation paths or usage history. Existing snapshot name evidence is migrated before refresh. Local removal records and exact-ID preference/manifests also supply names. Grouping now requires recorded embedded-bundle parent relationships, superseding the product-name association rule below: equal display names or identifier prefixes never merge products. Unresolved names display distinct identifiers. Naming never upgrades ownership or cleanup eligibility.
+
+The context menu retains Copy Identifier, Reveal in Finder, Copy Path and Uninstall…. **Force Quit** appears only for a safely matched running app. Matching uses canonical bundle URL, bundle identifier, process identifier and launch time; process exit must be observed before later steps proceed. Unsaved changes may be lost. Quit normally from the app to save work first. System components and Macventory’s own process are protected.
+
+**Clear App Data** is independent of uninstall. Macventory checks only bounded, normally accessible Library locations using exact bundle identifiers: containers, exact support/cache/log/WebKit directories, saved state and preferences. Exact identifiers are **Verified App Data**; exact display-name directories are **Possible Related Files** and require individual selection; group containers and shared/protected data cannot be moved automatically. The action uses Finder’s Trash, never permanent recursive deletion. It revalidates path identity, roots, symlink safety and nesting immediately before submission and reports every skipped or failed item.
+
+**Leftover Data** lists only groups with discovered, existing candidates. Minimal removal history is retained separately and does not create empty cleanup entries. A general scan of supported Library sources discovers exact preference/cache/container/support/saved-state identifiers and bounded local manifests, even without a previous inventory record or app bundle. There are no product-specific discovery hints. Installed and reinstalled applications are excluded using inventory and Launch Services. Retrospective associations and stale history remain possible-only; absence of an app is not proof of exclusive ownership.
+
+The default **Group by: Application** view combines only identities with a reliable human-readable association; raw identifier resemblance never joins groups. **Identifier** retains the technical one-identifier view. Search and confidence filters operate in both views. **Select All Verified Data** excludes possible, personal, shared and protected data. Possible-related files may be selected one at a time only after reviewing their exact path and confirmation warning. **Move Selected to Trash** opens a separate path-by-path review with a checkbox. A partial scan names the affected locations and blocks only candidates in those locations; independently verified targets remain subject to the same fresh ownership, identity and installed-app checks. Failed or cancelled scans require a retry. Documents, Downloads, Desktop and external volumes are not swept; individually nominated personal subfolders within the current home can be reviewed. Broad home/Library roots, application bundles and linked paths are rejected.
+
+Combined operations validate targets first, verify Force Quit, move approved data to Trash, then perform eligible uninstall. Failures stop later steps and preserve individual results. A Finder request that times out is reported as unknown and may still finish; the UI remains dismissible and does not retry automatically. Success uses “Operation completed.” with a separate operation-specific explanation; simulation always states that nothing changed.
 
 ## Settings
 

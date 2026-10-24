@@ -2,8 +2,9 @@ import Foundation
 
 public enum InventoryRunMode: Sendable {
     case normal, safeQA, uiTesting, demo
-    public init(arguments: [String]) {
+    public init(arguments: [String], qaBundle: Bool = false) {
         if arguments.contains("--demo") { self = .demo }
+        else if qaBundle { self = .uiTesting }
         else if arguments.contains("--ui-testing") { self = .uiTesting }
         else if arguments.contains("--safe-qa") { self = .safeQA }
         else { self = .normal }

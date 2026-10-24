@@ -2,15 +2,20 @@ import SwiftUI
 import AppKit
 import MacventoryCore
 
+private struct InventorySettingsPresentation: Identifiable {
+    let id = UUID()
+    let tab: Int
+}
+
 struct InventoryView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var navigation = "view:all"
+    @State private var navigation: Set<String> = ["view:all"]
     @State private var search = ""
     @State private var selected: String?
     @State private var filter = InventoryFilter()
     @State private var showFilters = false
-    @State private var showSettings = false
-    @State private var showUninstall = false
+    @State private var settingsPresentation: InventorySettingsPresentation?
+    @State private var managementPresentation: ManagementPresentation?
     @State private var showDetails = true
     @State private var headerSort = [InventoryComparator()]
 
@@ -22,22 +27,23 @@ struct InventoryView: View {
     }
     private var activeFilter: InventoryFilter {
         var value = filter; value.search = search; value.showSystem = model.configuration.showSystem || filter.systemOnly
-        if let view = LibraryView.allCases.first(where: { "view:" + $0.id == navigation }) { value.view = view }
         return value
     }
     private var rows: [SoftwareItem] {
         let filtered = model.items.filter {
             guard activeFilter.matches($0, configuration: model.configuration) else { return false }
-            guard navigation.hasPrefix("source:"), let source = InstallSource(rawValue: String(navigation.dropFirst(7))) else { return true }
-            return source == .unknown ? $0.primarySource == .unknown : $0.sources.contains { $0.source == source }
+            return InventoryCategorySelection.matches($0, categories: navigation, configuration: model.configuration)
         }
         return InventorySort.sorted(filtered, by: headerSort.first?.key ?? .name, descending: headerSort.first?.order == .reverse)
     }
     var body: some View {
         NavigationSplitView {
-            List(selection: $navigation) {
+            List(selection: Binding(get: { navigation }, set: { navigation = InventoryCategorySelection.normalized($0, previous: navigation) })) {
                 Section("Library") { ForEach([LibraryView.all, .apps, .packages], id: \.rawValue) { libraryRow($0) } }
                 Section("Smart Views") { ForEach([LibraryView.unused, .large, .recent, .unknown], id: \.rawValue) { libraryRow($0) } }
+                Section("Cleanup") {
+                    Label("Leftover Data", systemImage: "externaldrive.badge.questionmark").tag("leftovers").pointingControl()
+                }
                 Section("Install Sources") {
                     ForEach(InstallSource.allCases.filter { source in !model.configuration.hideAbsent || model.reports.first(where: { $0.source == source })?.state != .notInstalled }) { source in
                         HStack {
@@ -47,7 +53,7 @@ struct InventoryView: View {
                                 Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange).help(report.message)
                             } else if model.reports.first(where: { $0.source == source })?.state == .scanning { ProgressView().controlSize(.mini) }
                             Text("\(model.items.filter { item in (model.configuration.showSystem || !item.isSystem) && (source == .unknown ? item.primarySource == .unknown : item.sources.contains { $0.source == source }) }.count)").foregroundStyle(.secondary).monospacedDigit()
-                        }.tag("source:" + source.rawValue).help("Show software associated with " + source.title)
+                        }.tag("source:" + source.rawValue).help("Show software associated with " + source.title).pointingControl()
                     }
                 }
             }.listStyle(.sidebar).navigationSplitViewColumnWidth(min: 220, ideal: 245)
@@ -55,14 +61,19 @@ struct InventoryView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 10) {
                         Divider()
+                        Text("Command-click to select multiple categories").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12)
                         HStack(spacing: 18) {
-                            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }.controlHelp("Show Settings")
+                            Button { settingsPresentation = .init(tab: 0) } label: { Label("Settings", systemImage: "gearshape") }.controlHelp("Show Settings")
                             Button { showAbout(appearance: model.configuration.appearance) } label: { Label("About", systemImage: "info.circle") }.controlHelp("About Macventory")
                             Spacer(minLength: 0)
                         }.buttonStyle(.plain).padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 18)
                     }.background(.bar)
                 }
         } detail: {
+            if navigation.contains("leftovers") {
+                LeftoverDataView(onOpenScanningSettings: { settingsPresentation = .init(tab: 1) })
+                    .inventoryNavigationTitle()
+            } else {
             VStack(spacing: 0) {
                 if model.demoMode { Text("Demo inventory · fictional software · removal disabled").font(.caption).foregroundStyle(.secondary).padding(8) }
                 else if model.qaProtected { Label("QA protection: uninstall operations are simulated", systemImage: "shield.checkered").font(.caption).padding(8) }
@@ -71,13 +82,14 @@ struct InventoryView: View {
                 HSplitView {
                     table.frame(minWidth: 560)
                     if showDetails, let item = model.items.first(where: { $0.id == selected }) {
-                        DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays).id(item.id).frame(minWidth: 270, idealWidth: 300, maxWidth: 380)
+                        DetailsView(onUninstall: { manage(item) }, item: item, unusedDays: model.configuration.unusedDays).id(item.id).frame(minWidth: 270, idealWidth: 300, maxWidth: 380)
                     }
                 }
                 Divider()
                 HStack(spacing: 10) {
                     if model.scanning { ProgressView().controlSize(.small) }
                     Text(model.progress).lineLimit(1)
+                    if navigation.count > 1 { Text("\(navigation.count) categories · matching any").help("Results combine the selected sidebar categories, then apply search and filters.") }
                     Spacer()
                     Text("\(rows.count) shown of \(model.items.count)").monospacedDigit()
                         .help("Sidebar counts exclude hidden system software. Shown also reflects the selected category, search and filters.")
@@ -100,19 +112,25 @@ struct InventoryView: View {
                     else { Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.accessibilityIdentifier("inventory.refresh").controlHelp("Refresh Inventory").accessibilityLabel("Refresh Inventory") }
                 }
             }
-            .sheet(isPresented: $showSettings) { SettingsView(onClose: { showSettings = false }).frame(width: 760, height: 680) }
-            .sheet(isPresented: $showUninstall, onDismiss: { model.cancelUninstall() }) {
-                if let plan = model.uninstallPlan { UninstallView(plan: plan).id(plan.id) }
+            .sheet(item: $managementPresentation, onDismiss: { model.closeManagement() }) { presentation in
+                ManagementView(presentation: presentation).id(presentation.id)
             }
-            .onChange(of: model.uninstallPlan?.id) { if $0 == nil { showUninstall = false } }
             .onAppear { headerSort = [InventoryComparator(InventorySortKey(rawValue: model.configuration.defaultSort) ?? .name)] }
             .onChange(of: rows.map(\.id)) { ids in if let selected, !ids.contains(selected) { self.selected = nil } }
+            }
+        }
+        .background(NativeControlHelp().frame(width: 0, height: 0))
+        .sheet(item: $settingsPresentation) { presentation in
+            SettingsView(onClose: { settingsPresentation = nil }, initialTab: presentation.tab).id(presentation.id).frame(width: 760, height: 680)
         }
     }
     private func reviewUninstall(_ item: SoftwareItem) {
-        guard model.uninstallPlan == nil, !model.scanning, !model.uninstallWorking else { return }
-        model.prepareUninstall(item)
-        showUninstall = model.uninstallPlan != nil
+        manage(item)
+    }
+    private func manage(_ item: SoftwareItem, forceQuit: Bool = false) {
+        guard !model.scanning, !model.managementWorking, model.managementItem == nil, managementPresentation == nil else { return }
+        model.prepareManagement(item)
+        managementPresentation = ManagementPresentation(item: item, forceQuit: forceQuit)
     }
     private var table: some View {
         Group {
@@ -134,7 +152,10 @@ struct InventoryView: View {
             if ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) {
                 Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
                 if let path = item.path { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder"); Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path") }
-                Button("Uninstall…") { selected = id; reviewUninstall(item) }.disabled(model.scanning || model.uninstallWorking).controlHelp("Review uninstall eligibility; nothing is removed by opening the preview")
+                if model.runningTarget(for: item) != nil {
+                    Button("Force Quit") { selected = id; manage(item, forceQuit: true) }.disabled(model.scanning || model.managementWorking).controlHelp("Review the unsaved-work warning and exact running process before Force Quit")
+                }
+                Button("Uninstall…") { selected = id; manage(item) }.disabled(model.scanning || model.managementWorking).controlHelp("Review Force Quit, Clear App Data and source-aware Uninstall in one dialog")
             }
         } primaryAction: { ids in
             guard ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) else { return }
@@ -152,7 +173,7 @@ struct InventoryView: View {
                         Text(item.name).lineLimit(1).help(item.name)
                         if item.stale { Text("Cached / Stale").font(.caption2).foregroundStyle(.secondary) }
                     }
-                }.padding(.vertical, 3)
+                }.padding(.vertical, 3).pointingControl()
             }.width(min: 160, ideal: 220)
             TableColumn("Version", sortUsing: InventoryComparator(.version)) { Text($0.version ?? "Not Available").help($0.version ?? "Version Not Available").foregroundStyle($0.version == nil ? .secondary : .primary).lineLimit(1) }.width(min: 75, ideal: 100)
             TableColumn("Source", sortUsing: InventoryComparator(.source)) { Text($0.primarySource.title).lineLimit(1).help($0.primarySource.title) }.width(min: 120, ideal: 165)
@@ -163,7 +184,7 @@ struct InventoryView: View {
         .accessibilityIdentifier("inventory.table").accessibilityHint("Select a row for details. Double-click or press Return to review uninstall eligibility; this never starts removal.")
     }
     private func libraryRow(_ view: LibraryView) -> some View {
-        HStack { Text(view.rawValue); Spacer(); Text("\(model.items.filter { item in var filter = InventoryFilter(); filter.view = view; filter.showSystem = model.configuration.showSystem; return filter.matches(item, configuration: model.configuration) }.count)").foregroundStyle(.secondary).monospacedDigit() }.tag("view:" + view.id).help("Show " + view.rawValue)
+        HStack { Text(view.rawValue); Spacer(); Text("\(model.items.filter { item in var filter = InventoryFilter(); filter.view = view; filter.showSystem = model.configuration.showSystem; return filter.matches(item, configuration: model.configuration) }.count)").foregroundStyle(.secondary).monospacedDigit() }.tag("view:" + view.id).help("Show " + view.rawValue).pointingControl()
     }
 }
 
@@ -176,13 +197,29 @@ struct AppIcon: View {
     var body: some View {
         Group {
             if let demoSymbol { Image(systemName: demoSymbol).resizable().scaledToFit().foregroundStyle(.blue).padding(4) }
-            else if let icon { Image(nsImage: icon).resizable() }
+            else if let icon { Image(nsImage: icon).resizable().scaledToFit() }
             else { Image(systemName: "shippingbox").resizable().scaledToFit().foregroundStyle(.secondary).padding(4) }
         }.frame(width: 28, height: 28).accessibilityHidden(true)
             .task(id: path) {
-                guard demoSymbol == nil, let path else { return }
-                icon = NSWorkspace.shared.icon(forFile: path)
+                icon = nil
+                guard demoSymbol == nil, let path, path.hasSuffix(".app"), FileSystem.exists(path) else { return }
+                icon = ApplicationIconCache.shared.icon(for: path)
             }
+    }
+}
+
+@MainActor
+private final class ApplicationIconCache {
+    static let shared = ApplicationIconCache()
+    private let images = NSCache<NSString, NSImage>()
+    func icon(for path: String) -> NSImage {
+        let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let key = (FileSystem.canonical(path) + "|\(modified)") as NSString
+        if let cached = images.object(forKey: key) { return cached }
+        let image = NSWorkspace.shared.icon(forFile: path)
+        image.size = NSSize(width: 64, height: 64)
+        images.setObject(image, forKey: key)
+        return image
     }
 }
 

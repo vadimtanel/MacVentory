@@ -5,6 +5,7 @@ import MacventoryCore
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     var onClose: (() -> Void)? = nil
+    var initialTab = 0
     @State private var selectedTab = 0
     @State private var transaction = SettingsDraft()
     @State private var validationError: String?
@@ -36,7 +37,7 @@ struct SettingsView: View {
             }.padding(16)
         }.frame(minWidth: 700, minHeight: 560, alignment: .top)
             .preferredColorScheme(model.configuration.appearance == "dark" ? .dark : model.configuration.appearance == "light" ? .light : nil)
-            .onAppear { transaction = SettingsDraft(model.configuration); validationError = nil }
+            .onAppear { selectedTab = initialTab; transaction = SettingsDraft(model.configuration); validationError = nil }
             .onDisappear { transaction.cancel() }
             .background(SettingsWindowReader { if hostingWindow !== $0 { hostingWindow = $0 } }.frame(width: 0, height: 0))
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
@@ -70,6 +71,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             heading("Scanning", "Choose when to refresh and where to look. Done saves changes and refreshes once when scan locations change.")
             SettingToggle("Scan on launch", "Automatically refresh the software inventory when Macventory opens.", value: $transaction.value.scanOnLaunch)
+            SettingToggle("Discover related folders in Documents, Downloads and Desktop", "Search direct child folders in these personal locations for possible app associations. Nothing is automatically selected or deleted; each folder requires manual review.", value: $transaction.value.discoverPersonalFolders)
             SettingToggle("Discover external application and Steam libraries", "Include supported application folders and Steam library paths on mounted external volumes, when present.", value: $transaction.value.externalVolumes)
             SettingRow("Additional app directories", "Extra local folders to search for application bundles. Enter one directory per line.") {
                 TextField("Additional app directories", text: pathList(\.customAppDirectories, separator: "\n"), axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder).controlHelp("Extra local application directories, one per line")
@@ -125,7 +127,7 @@ struct SettingsView: View {
                 Button("Export Sanitized Diagnostics…") { model.exportDiagnostics() }.controlHelp("Save only source counts and status")
             }
             SettingRow("Inventory cache", "Clears Macventory’s saved inventory snapshot. Installed applications, packages and personal files are untouched. Refresh to rebuild the inventory.") {
-                Button("Clear Inventory Cache") { model.clearCache() }.disabled(model.scanning || model.fixtureMode).controlHelp(model.fixtureMode ? "Cache maintenance is disabled in isolated demo and test modes" : model.scanning ? "Wait for the current scan to finish" : "Clear only Macventory’s cached inventory")
+                Button("Clear Inventory Cache") { model.clearCache() }.disabled(model.scanning || model.qaProtected).controlHelp(model.qaProtected ? "Cache maintenance is disabled in QA, demo and test modes" : model.scanning ? "Wait for the current scan to finish" : "Clear only Macventory’s cached inventory")
             }
         }
     }

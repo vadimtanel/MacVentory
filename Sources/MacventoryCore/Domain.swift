@@ -131,6 +131,12 @@ public struct ScanConfiguration: Codable, Sendable, Equatable {
     public var nixExecutable = "/nix/var/nix/profiles/default/bin/nix"
     public var additionalProviderRoots: [String] = []
     public var externalVolumes = false
+    // Optional storage preserves decoding of configuration files from older builds.
+    private var personalFolderDiscoveryEnabled: Bool? = nil
+    public var discoverPersonalFolders: Bool {
+        get { personalFolderDiscoveryEnabled ?? false }
+        set { personalFolderDiscoveryEnabled = newValue }
+    }
     public var scanOnLaunch = true
     public var hideAbsent = false
     public var unusedDays = 180

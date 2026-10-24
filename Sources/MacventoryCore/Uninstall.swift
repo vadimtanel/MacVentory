@@ -115,7 +115,8 @@ public protocol UninstallExecuting: Sendable { func execute(_ plan: UninstallPla
 public protocol UninstallValidating: Sendable { func validate(_ plan: UninstallPlan) async throws }
 public struct FreshUninstallValidator: UninstallValidating {
     private let standaloneChecker: (any StandaloneRemovalChecking)?
-    public init(standaloneChecker: (any StandaloneRemovalChecking)? = nil) { self.standaloneChecker = standaloneChecker }
+    private let allowRunningDuringPreflight: Bool
+    public init(standaloneChecker: (any StandaloneRemovalChecking)? = nil, allowRunningDuringPreflight: Bool = false) { self.standaloneChecker = standaloneChecker; self.allowRunningDuringPreflight = allowRunningDuringPreflight }
     public func validate(_ plan: UninstallPlan) async throws {
         try Task.checkCancellation()
         var eligibility: StandaloneEligibility?
@@ -124,7 +125,7 @@ public struct FreshUninstallValidator: UninstallValidating {
             eligibility = try await checker.check(plan.item)
         }
         let running = await MainActor.run { NSWorkspace.shared.runningApplications.contains { $0.bundleURL.map { FileSystem.canonical($0.path) }.map { $0 == plan.item.path || $0.hasPrefix((plan.item.path ?? "") + "/") } == true } }
-        let fresh = UninstallPlanner.plan(for: plan.item, running: running, standaloneEligibility: eligibility)
+        let fresh = UninstallPlanner.plan(for: plan.item, running: running && !allowRunningDuringPreflight, standaloneEligibility: eligibility)
         guard plan.canExecute, Date().timeIntervalSince(plan.createdAt) < 300,
               fresh.method == plan.method, fresh.arguments == plan.arguments, fresh.executable == plan.executable,
               fresh.fingerprint == plan.fingerprint else { throw ScanError.process("Application, ownership or removal plan changed. Refresh and prepare a new confirmation.") }
@@ -202,14 +203,7 @@ public struct LiveUninstallExecutor: UninstallExecuting {
               !NSWorkspace.shared.runningApplications.contains(where: { app in
                   app.bundleURL.map { FileSystem.canonical($0.path) }.map { $0 == path || $0.hasPrefix(path + "/") } == true
               }) else { throw ScanError.process("The target changed or is running. Prepare a new preview.") }
-        let url = URL(fileURLWithPath: path)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            NSWorkspace.shared.recycle([url]) { moved, error in
-                if let error { continuation.resume(throwing: ScanError.process("Move to Trash failed: " + error.localizedDescription + ". No automatic retry or cleanup was attempted.")) }
-                else if moved[url] == nil { continuation.resume(throwing: ScanError.process("Finder did not confirm moving this bundle to Trash. Refresh before retrying.")) }
-                else { continuation.resume() }
-            }
-        }
+        try await NativeTrashRequest.recycle(URL(fileURLWithPath: path))
     }
 
 }
