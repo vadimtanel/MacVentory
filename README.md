@@ -76,6 +76,34 @@ Two discoveries of the same physical app can become one row. Separate copies and
 
 ## Installation
 
+### Homebrew installation
+
+For most users with Homebrew installed, one command is sufficient:
+
+```bash
+brew install --cask vadimtanel/macventory/macventory
+```
+
+Homebrew automatically adds the [Macventory Tap](https://github.com/vadimtanel/homebrew-macventory) and downloads the official release DMG, verified against the Cask's SHA-256. Adding the Tap manually is optional:
+
+```bash
+brew tap vadimtanel/macventory
+brew install --cask vadimtanel/macventory/macventory
+```
+
+The fully qualified name avoids Cask-name conflicts and grants trust only to this Cask under [Homebrew's Tap Trust guidance](https://docs.brew.sh/Tap-Trust). Adding the Tap alone does not grant whole-Tap trust.
+
+To update:
+
+```bash
+brew update
+brew upgrade --cask vadimtanel/macventory/macventory
+```
+
+The Tap checks for new stable releases approximately every six hours and updates after automated artifact and Homebrew checks pass. Synchronization may be delayed; users receive available updates through the commands above. See the [latest stable release](https://github.com/vadimtanel/MacVentory/releases/latest) and [Tap documentation](https://github.com/vadimtanel/homebrew-macventory) for details.
+
+Homebrew is optional: direct [DMG and ZIP downloads](https://github.com/vadimtanel/MacVentory/releases) and the manual instructions below remain available. The application is currently ad-hoc signed and **not Apple-notarized**. Homebrew installation does not bypass Gatekeeper; review the [first-launch guidance](#first-launch-and-gatekeeper).
+
 ### Recommended DMG installation
 
 1. [Download the v1.0.0 DMG](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.dmg).
