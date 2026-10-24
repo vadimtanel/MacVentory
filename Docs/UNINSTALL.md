@@ -1,5 +1,37 @@
 # Single-application uninstall
 
+Build107 clarifies whole-folder targeting: the selected directory URL, including its contents, is submitted as one native Trash target. It does not submit only child files or remove unselected parent directories. Permission errors now distinguish reading the target, checking parent writability and Finder rejection with underlying domain/code. Review access in macOS Privacy & Security yourself; no automatic grants, elevation or bypass are implemented. A readable directory can still be protected against modification.
+
+## Build106 cleanup and optional personal locations
+
+Cleanup now distinguishes No Longer Exists/Already Removed from Permission Denied, Changed Since Scan, Cleanup Failed and Outcome Unknown. Already absent items are reconciled immediately and never credited as deletions. Independent selected items can proceed only after their own preflight; duplicates/nesting block submission, and unknown native outcomes stop remaining requests without automatic retry. A partial scan can remove confirmed stale observations while retaining inaccessible/inconclusive entries and their errors.
+
+The Scanning setting “Discover related folders in Documents, Downloads and Desktop” defaults off. Enabling it permits bounded direct-child suggestions based on known identities, with a manual-review warning, individual selection, exact paths and explicit confirmation. Suggestions never enter Select All Verified Data. Shared/ambiguous/protected/linked targets remain blocked. This opt-in behavior supersedes earlier text excluding all personal-location discovery. Discovery does not authorize deletion, bypass macOS privacy restrictions or request elevation.
+
+## Identity correction
+
+The local identity index retains friendly names and embedded-bundle parent relationships after applications disappear. Snapshot migration preserves existing bundle name evidence; removal records and bounded exact-ID local manifests provide fallback names. Application groups join identifiers only using recorded parent relationships, superseding any same-name grouping description below. Names and parent associations never authorize cleanup or upgrade Possible Related Files. Last observed is not uninstall evidence. Unresolved names keep their identifiers; absent helper evidence keeps components separate. Launch Services is used for installed/reinstalled exclusion; a missing registration is never treated as proof of exclusive ownership.
+
+## Current workflow — build 104 (supersedes build 103 UI)
+
+One item-based sheet serves row double-click/Return, the details Uninstall button and right-click Uninstall…. Its title is the neutral **Application Name**, followed by version/source information and operation-specific status. The context menu contains Copy Identifier, Reveal in Finder, Copy Path, a conditional Force Quit, and Uninstall…; redundant management/data entries are removed. Normal Quit remains the application’s native command; the management sheet offers the three independently eligible Force Quit/Clear App Data/Uninstall checkboxes.
+
+The sheet owns immutable review identity and a single-use execution request. Selection changes reset acknowledgment. Execution validates all selected targets first, stops/verifies the reviewed process, moves selected data, then uninstalls; failure or partial cleanup skips subsequent steps. Completed, partially completed, failed and cancelled states show per-step results and one **OK** button. Dismissing clears the actual presentation binding; inventory refresh is deferred until dismissal. No terminal result retains executable controls.
+
+Data scans/size summaries run away from the main actor. Native Finder callbacks have a 30-second watchdog and single-resume completion gate. Timeout means unknown outcome, not cancelled deletion: an already submitted request may finish later. Process identity also binds launch date against PID reuse/restart; related bundled helpers block later data cleanup if still running. Uninstall’s existing source ownership, freshness, fingerprint, permissions and final stopped-process checks remain intact.
+
+Leftover Data performs general bounded discovery from normal Library sources and local exact-ID manifests, with no hardcoded application names/IDs. Installed/reinstalled apps are cross-checked with current inventory and Launch Services. Only groups with files are actionable. Application grouping combines only independently recorded or metadata-backed product names; Identifier grouping remains available for technical review. Unknown retrospective identities and records older than 30 days cannot authorize Select All Verified; name matches remain possible, group containers protected. Partial scans preserve prior observations and identify the affected Library location, permission state and retry action. Candidates outside the affected location may be selected only when their own preflight checks still establish safe ownership; failed/cancelled scans require a retry. Manually nominated home subfolders remain possible-only. Arbitrary undocumented vendor layouts and every file ever created cannot be reliably discovered.
+
+## Application management — build 103
+
+Macventory now presents independent **Quit**, **Force Quit**, **Clear App Data**, and **Uninstall** choices through **Manage Application…**. A single explicit review checkbox gates the selected operations; their execution order is process action, confirmed process exit, selected data to Trash, then uninstall. Failed critical steps stop later steps, and the result lists partial successes rather than claiming a rollback or complete cleanup.
+
+Force Quit is a native `NSRunningApplication` request, not a `killall`/`pkill` name match. The selected canonical bundle URL and bundle identifier must both match the running process at review and immediately before execution. Normal Quit remains distinct; Force Quit warns about unsaved changes. System components, Macventory itself, and uncertain targets are unavailable.
+
+Clear App Data checks exact application-specific locations under the current user’s Library. Exact bundle-ID containers, preferences, caches, logs, WebKit and saved state can be verified. Exact display-name support/cache folders are possible-only and require individual selection; group containers remain protected because they may be shared. All selected targets are revalidated for identity, root containment, symlink substitution, duplicate/nested paths and accessibility before native Finder Trash submission. It does not use `rm`, permanent deletion, broad home scans, or package-manager cleanup.
+
+The **Leftover Data** sidebar view works when an app no longer exists. Macventory preserves a minimal recently-removed identity record only after a confirmed Macventory removal and also offers bounded retrospective discovery by exact identifier for externally removed software. The Kimi identifier is an investigation hint, not proof. Documents/Downloads/Desktop/external paths are user-chosen review items and are never included in Select All Verified Data.
+
 Discovery remains read-only. Uninstall is a separate, explicitly requested operation, never automatic or bulk. Double-click a row, press Return, or choose **Uninstall…** to see its exact name, version, source, path, operation and any manager arguments. An executable plan requires the review checkbox and explicit operation-specific confirmation. Canceling the preview never executes it.
 
 | Source | Current behavior |

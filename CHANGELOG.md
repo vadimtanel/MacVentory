@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+- Build107: added Command-click inventory sidebar category unions with search/filter preservation.
+- Improved cleanup permission diagnostics/recovery guidance and made whole-folder scope and personal-discovery status explicit.
+
+- Build106: reconciled missing leftover targets with Already Removed results and per-item cleanup outcomes.
+- Added default-off bounded personal-folder suggestions with mandatory manual review and permission reporting.
+
+- Retained local application identity history separately from current inventory, with bounded storage and snapshot migration.
+- Restored friendly leftover names from local evidence and restricted helper grouping to recorded parent relationships.
+- Replaced repeated Unknown application labels with distinct identifiers; kept naming separate from cleanup permission.
+- Added a separate QA app identity and persistent fail-closed isolation marker.
+
+- Corrected application-management result titles and reduced repeated completion copy.
+- Added Application/Identifier leftover grouping without merging cleanup authority.
+- Added structured scan issues, retry affordances and per-candidate partial-scan eligibility.
+
+## 1.0.0 — build 104 local corrections
+
+- Fixed blank/dimmed management sheets by using one item-based presentation and explicit terminal results with OK-only dismissal.
+- Unified double-click/Return and Uninstall…; simplified context menus and verified Force Quit visibility.
+- Added single-use ordered management execution, partial/failure/cancellation results, process-restart checks and a native Trash callback timeout.
+- Replaced hardcoded leftover hints with generic identifier/manifest discovery, installed-app correlation, actual-candidate group filtering, search/confidence filters and a visible trash-icon/text review action.
+- Added simulation-only lifecycle/discovery regressions and native synthetic GUI checks; preserved icons, branding, sources and licensing.
+
+## 1.0.0 — build 103 local work
+
+- Added independent native Quit/Force Quit planning, source-aware Clear App Data review, combined management confirmation, and a Leftover Data sidebar.
+- Added bounded exact-ID residual-data discovery, minimal recently-removed identity records, explicit manual personal-location review, and retrospective Kimi identifier investigation support.
+- Added fixture-only ownership/simulation tests; no live destructive verification was performed.
+
 ## 1.0.0 — prepared locally, not published
 
 ### Build101 corrections

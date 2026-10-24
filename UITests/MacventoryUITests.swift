@@ -146,9 +146,10 @@ final class MacventoryUITests: XCTestCase {
                        "The sheet must close before reopening settings or opening About")
     }
 
-    private func launch() -> XCUIApplication {
+    private func launch(headerSorting: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
+        if headerSorting { app.launchArguments.append("--ui-testing-header-sorts") }
         app.launch()
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
@@ -202,35 +203,48 @@ final class MacventoryUITests: XCTestCase {
         let app = launch()
         inventoryTable(app).staticTexts["Example App"].firstMatch.click()
         app.buttons["inventory.uninstall"].click()
-        let confirm = app.buttons["uninstall.confirm"]
+        let confirm = app.buttons["management.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertFalse(confirm.isEnabled)
         app.buttons["Cancel"].firstMatch.click()
         XCTAssertFalse(confirm.exists)
         app.buttons["inventory.uninstall"].click()
         XCTAssertFalse(app.textFields["uninstall.confirmName"].exists)
-        XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 3))
-        app.checkBoxes["uninstall.acknowledge"].click()
+        let uninstall = app.checkBoxes["management.uninstall"]
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: uninstall)
+        waitForExpectations(timeout: 10)
+        uninstall.click()
+        app.checkBoxes["management.acknowledge"].click()
         XCTAssertTrue(confirm.isEnabled)
         confirm.click()
-        XCTAssertTrue(app.staticTexts["Simulation completed. Nothing was removed or modified."].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["uninstall.ok"].exists)
-        XCTAssertFalse(app.buttons["uninstall.confirm"].exists)
-        XCTAssertFalse(app.checkBoxes["uninstall.acknowledge"].exists)
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["management.ok"].exists)
+        XCTAssertFalse(app.buttons["management.confirm"].exists)
+        XCTAssertFalse(app.checkBoxes["management.acknowledge"].exists)
         XCTAssertFalse(app.buttons["Cancel"].exists)
-        app.buttons["uninstall.ok"].click()
-        XCTAssertFalse(app.buttons["uninstall.ok"].exists)
+        app.buttons["management.ok"].click()
+        XCTAssertFalse(app.buttons["management.ok"].exists)
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        inventoryTable(app).staticTexts["Example App"].firstMatch.doubleClick()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertFalse(confirm.isEnabled)
+        app.buttons["management.cancel"].click()
+        XCTAssertFalse(app.sheets.firstMatch.exists)
     }
     func testNativeRowPrimaryActionAndProtectedPreview() throws {
         let app = launch()
         let row = inventoryTable(app).staticTexts["Example App"].firstMatch
         row.click()
-        XCTAssertFalse(app.buttons["uninstall.confirm"].exists)
+        XCTAssertFalse(app.buttons["management.confirm"].exists)
         row.doubleClick()
-        let confirm = app.buttons["uninstall.confirm"]
+        let confirm = app.buttons["management.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertFalse(confirm.isEnabled)
-        app.checkBoxes["uninstall.acknowledge"].click()
+        let uninstall = app.checkBoxes["management.uninstall"]
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: uninstall)
+        waitForExpectations(timeout: 10)
+        uninstall.click()
+        app.checkBoxes["management.acknowledge"].click()
         XCTAssertTrue(confirm.isEnabled)
         app.buttons["Cancel"].firstMatch.click()
         row.doubleClick()
@@ -243,6 +257,9 @@ final class MacventoryUITests: XCTestCase {
         row.rightClick()
         XCTAssertTrue(app.menuItems["Copy Identifier"].exists)
         XCTAssertTrue(app.menuItems["Uninstall…"].exists)
+        XCTAssertFalse(app.menuItems["Force Quit"].exists)
+        XCTAssertFalse(app.menuItems["Manage Application…"].exists)
+        XCTAssertFalse(app.menuItems["Clear App Data…"].exists)
         app.typeKey(.escape, modifierFlags: [])
         try clickVisible(app.buttons["inventory.settings"])
         app.checkBoxes["Show system applications"].click()
@@ -251,6 +268,63 @@ final class MacventoryUITests: XCTestCase {
         inventoryTable(app).staticTexts["Example System Component"].firstMatch.doubleClick()
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertFalse(confirm.isEnabled)
+    }
+
+    func testRunningContextForceQuitOnlyHasSingleOKAndReopens() {
+        let app = launch()
+        let row = inventoryTable(app).staticTexts["Running Example"].firstMatch
+        row.rightClick()
+        XCTAssertTrue(app.menuItems["Force Quit"].exists)
+        app.menuItems["Force Quit"].click()
+        XCTAssertTrue(app.checkBoxes["management.forceQuit"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.checkBoxes["management.forceQuit"].value as? Int, 1)
+        let review = app.checkBoxes["management.acknowledge"]
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: review); waitForExpectations(timeout: 10)
+        review.click(); app.buttons["management.confirm"].click()
+        XCTAssertTrue(app.buttons["management.ok"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["management.confirm"].exists)
+        XCTAssertFalse(app.buttons["Cancel"].exists)
+        app.buttons["management.ok"].click()
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        row.doubleClick()
+        XCTAssertTrue(app.buttons["management.confirm"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["management.confirm"].isEnabled)
+    }
+
+    func testLeftoverCleanupRemovesOnlyResolvedSyntheticGroupAndRestoresInteraction() {
+        let app = launch()
+        app.staticTexts["Leftover Data"].firstMatch.click()
+        let retired = app.staticTexts["Retired Studio"].firstMatch
+        XCTAssertTrue(retired.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Empty Removed App"].exists)
+        retired.click()
+        app.buttons["Select All Verified Data"].click()
+        let helper = app.checkBoxes.matching(NSPredicate(format: "label CONTAINS %@", "Caches/org.example.retired.share")).firstMatch
+        XCTAssertEqual(helper.value as? Int, 0, "A friendly helper name must not enable automatic selection")
+        helper.click() // Explicit individual review of this synthetic possible-only helper.
+        app.buttons["leftovers.trash"].click()
+        XCTAssertFalse(app.buttons["cleanup.confirm"].isEnabled)
+        app.checkBoxes["cleanup.acknowledge"].click()
+        app.buttons["cleanup.confirm"].click()
+        XCTAssertTrue(app.buttons["cleanup.ok"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["cleanup.confirm"].exists)
+        app.buttons["cleanup.ok"].click()
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: retired); waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.staticTexts["net.example.unobserved"].exists)
+        app.staticTexts["All Software"].firstMatch.click()
+        XCTAssertTrue(inventoryTable(app).staticTexts["Example App"].firstMatch.exists)
+    }
+
+    func testLeftoverFooterSettingsOpensAndReturnsToSamePage() {
+        let app = launch()
+        app.staticTexts["Leftover Data"].firstMatch.click()
+        XCTAssertTrue(app.textFields["leftovers.search"].waitForExistence(timeout: 5))
+        app.buttons["Settings"].firstMatch.click()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(app.textFields["leftovers.search"].exists)
+        XCTAssertFalse(app.sheets.firstMatch.exists)
     }
 
     func testColumnVisibilityMenu() throws {
@@ -266,7 +340,7 @@ final class MacventoryUITests: XCTestCase {
         }
     }
     func testAllNativeHeaderSortsPreserveSelection() throws {
-        let app = launch()
+        let app = launch(headerSorting: true)
         let table = inventoryTable(app)
         recordHeaderState(app, phase: "before selection")
         table.staticTexts["Example App"].firstMatch.click()
@@ -360,7 +434,7 @@ final class MacventoryUITests: XCTestCase {
 final class MacventoryHeaderPointerDiagnostics: XCTestCase {
     func testSourceHeaderRealPointerBothDirectionsPreservesIdentity() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing"]
+        app.launchArguments = ["--ui-testing", "--ui-testing-header-sorts"]
         app.launch()
         app.activate()
         let window = app.windows.firstMatch

@@ -1,5 +1,9 @@
 # Repository cleanup — Macventory 1.0.0 build 101
 
+## Build 104 additions
+
+This correction pass adds one visually reviewed public screenshot, `macventory-leftover-data.png`, using only synthetic QA group names with no candidate selected or private path visible. The publication screenshot allowlist explicitly includes it. Other QA copies, fixture bundles, runtime reports and private Dark Mode evidence remain under ignored build paths. No real application/user data/cache was cleaned. Existing staged source additions were preserved; this pass performed no index, history or remote changes. Original branding/license/NOTICE assets remain unchanged.
+
 This pass changes repository hygiene and source packaging only. Application source, tests, approved artwork, icon derivatives and completed UI behavior are preserved. No real uninstall, installed-software modification, cache clearing, staging, commit or publication.
 
 ## Design audit and resource dependencies

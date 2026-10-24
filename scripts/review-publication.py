@@ -12,7 +12,7 @@ raw = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exc
 paths = sorted(set(p for p in raw.decode().split('\0') if p))
 errors = []
 manifest = []
-screenshots = {'macventory-inventory-light.png', 'macventory-inventory-dark.png', 'macventory-settings.png', 'macventory-about.png', 'macventory-installer.png'}
+screenshots = {'macventory-inventory-light.png', 'macventory-inventory-dark.png', 'macventory-settings.png', 'macventory-about.png', 'macventory-installer.png', 'macventory-leftover-data.png'}
 # Match credential-shaped literals, not ordinary variable names or safety documentation.
 patterns = [r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----', r'gh[pousr]_[A-Za-z0-9]{30,}', r'github_pat_[A-Za-z0-9_]{40,}', r'AKIA[A-Z0-9]{16}', r'sk-[A-Za-z0-9]{32,}']
 for relative in paths:

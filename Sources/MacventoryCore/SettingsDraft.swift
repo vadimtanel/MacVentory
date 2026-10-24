@@ -5,6 +5,7 @@ public struct SettingsCommit: Sendable {
     public let configuration: ScanConfiguration
     public let requiresRescan: Bool
     public var hasChanges: Bool { original != configuration }
+    public var requiresLeftoverRescan: Bool { original.discoverPersonalFolders != configuration.discoverPersonalFolders }
 }
 public struct SettingsDraft: Sendable {
     public private(set) var original: ScanConfiguration
