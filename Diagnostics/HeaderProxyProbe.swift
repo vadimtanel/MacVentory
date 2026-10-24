@@ -136,6 +136,8 @@ private struct ProbeTable: View {
                     ? String(describing: proxy.accessibilityAttributeValue(activation)) : "not exposed"
                 let data: [String: Any] = [
                     "column": table.tableColumns[index].title, "headerRect": NSStringFromRect(rect),
+                    "phase": phaseNames[phase], "selectedRow": table.selectedRow,
+                    "windowFrame": NSStringFromRect(window.frame),
                     "AXPosition": String(describing: proxy.accessibilityAttributeValue(.position)),
                     "AXSize": String(describing: proxy.accessibilityAttributeValue(.size)),
                     "AXActivationPoint": activationValue,

@@ -78,13 +78,23 @@ jobs:
           xcodebuild -project Macventory.xcodeproj -scheme Macventory \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
             -resultBundlePath build/verification/UITests.xcresult \
-            -only-testing:MacventoryUITests -parallel-testing-enabled NO \
+            -only-testing:MacventoryUITests/MacventoryUITests -parallel-testing-enabled NO \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test \
             2>&1 | tee build/verification/xcode-ui-tests.log
       - name: Compare synthetic native header proxies on the hosted runtime
         if: always()
         timeout-minutes: 5
         run: bash scripts/probe-header-proxies.sh "$PWD/build/DerivedData/Build/Products/Debug"
+      - name: Diagnose Source header with actual element-relative mouse clicks
+        if: always()
+        timeout-minutes: 3
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            -resultBundlePath build/verification/HeaderPointerDiagnostic.xcresult \
+            -only-testing:MacventoryUITests/MacventoryHeaderPointerDiagnostics -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test-without-building \
+            2>&1 | tee build/verification/header-pointer-diagnostic.log
       - name: Report actual GUI test outcome
         if: always()
         env:

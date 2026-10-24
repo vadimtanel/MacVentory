@@ -261,3 +261,86 @@ final class MacventoryUITests: XCTestCase {
     }
 
 }
+
+/// Independent mouse diagnostic. This class never substitutes for the strict
+/// ten-method suite above, and is run into its own result bundle in CI.
+@MainActor
+final class MacventoryHeaderPointerDiagnostics: XCTestCase {
+    func testSourceHeaderRealPointerBothDirectionsPreservesIdentity() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        app.activate()
+        let window = app.windows.firstMatch
+        _ = try XCTUnwrap(window.waitForExistence(timeout: 10) ? window : nil)
+        let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        _ = try XCTUnwrap(table.waitForExistence(timeout: 5) ? table : nil)
+        let selected = table.staticTexts["Example App"].firstMatch
+        _ = try XCTUnwrap(selected.waitForExistence(timeout: 5) && selected.isHittable ? selected : nil)
+        selected.click()
+        XCTAssertTrue(app.buttons["Copy Identifier"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["org.example.app"].exists)
+
+        func names() -> [String] {
+            table.children(matching: .outlineRow).allElementsBoundByIndex.map { row in
+                let matches = ["Example App", "example-tool"].filter { row.staticTexts[$0].exists }
+                return matches.count == 1 ? matches[0] : "<unexpected row: \(row.debugDescription)>"
+            }
+        }
+        func record(_ phase: String) {
+            let header = table.buttons["Source"]
+            let attachment = XCTAttachment(string: "phase=\(phase) state=\(app.state.rawValue) " +
+                "window=\(window.frame) table=\(table.frame) header=\(header.frame) " +
+                "hittable=\(header.isHittable) value=\(String(describing: header.value)) rows=\(names())\n" + app.debugDescription)
+            attachment.name = "Source real-pointer diagnostic — " + phase
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = attachment.name
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertEqual(names(), ["Example App", "example-tool"], "Known initial name order is required")
+        // Start from the opposite Source order so the ascending click must also
+        // visibly reorder rows. Version is the confirmed hittable control.
+        let version = table.buttons["Version"]
+        _ = try XCTUnwrap(version.exists && version.isHittable ? version : nil)
+        version.click()
+        let oppositeFirst = table.children(matching: .outlineRow).element(boundBy: 0).staticTexts["example-tool"]
+        XCTAssertTrue(oppositeFirst.waitForExistence(timeout: 5))
+        XCTAssertEqual(names(), ["example-tool", "Example App"])
+        XCTAssertTrue(app.staticTexts["org.example.app"].exists)
+        for ascending in [true, false] {
+            let phase = ascending ? "ascending" : "descending"
+            record("before " + phase)
+            defer { record("after " + phase) }
+            // Resolve again before each click. isHittable is recorded, deliberately
+            // not a precondition in this explicitly named diagnostic.
+            let header = table.buttons["Source"]
+            _ = try XCTUnwrap(header.waitForExistence(timeout: 5) ? header : nil)
+            let frame = header.frame
+            let nestedScroll = table.scrollViews.firstMatch
+            let viewport = nestedScroll.exists ? nestedScroll : app.scrollViews.containing(.any, identifier: "inventory.table").firstMatch
+            _ = try XCTUnwrap(viewport.exists ? viewport : nil, "Resolve the actual enclosing table viewport")
+            _ = try XCTUnwrap(app.state == .runningForeground && frame.width > 0 && frame.height > 0 &&
+                window.frame.contains(frame) && table.frame.contains(frame) && viewport.frame.contains(frame) ? header : nil,
+                "The Source header must be fully inside the active window and table viewport")
+            let coordinate = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            _ = try XCTUnwrap(frame.contains(coordinate.screenPoint) ? header : nil,
+                              "The element-relative click must remain inside the resolved header")
+            let before = names()
+            coordinate.click()
+            let expected = ascending ? ["Example App", "example-tool"] : ["example-tool", "Example App"]
+            // XCTest exposes no dedicated AXSortDirection property. Complete
+            // fixture row order is the independent direction oracle; the native
+            // probe separately verifies AXSortDirection on this runtime.
+            let first = table.children(matching: .outlineRow).element(boundBy: 0).staticTexts[expected[0]]
+            XCTAssertTrue(first.waitForExistence(timeout: 5),
+                           "A real Source click must apply " + phase + " source order")
+            XCTAssertEqual(names(), expected)
+            XCTAssertNotEqual(names(), before, "Both Source interactions must visibly reorder rows")
+            XCTAssertTrue(app.buttons["Copy Identifier"].exists)
+            XCTAssertTrue(app.staticTexts["org.example.app"].exists, "Sorting must preserve the selected application's identity")
+        }
+    }
+}
