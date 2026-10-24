@@ -1,5 +1,7 @@
 # Persistent Source header investigation — 24 October 2026
 
+**Superseded evidence:** [the d93cf87 diagnostic run](HEADER-PROXIES.md) confirms five of six headers are not hittable before selection, unchanged after Details/Version sorts. Those actions do not cause the failure. The historical investigation below describes earlier evidence only.
+
 Baseline271cd134bd22bc56c3f8f89d8635d5c25d44cc4b, branch fix/cloud-xcode-ci. This is a diagnostic/test correction candidate, not a claimed production fix or passing GUI run. Version1.0.0/build102, pinned Xcode26.5 and responsive layout remain unchanged. No commit/push/merge/tag/publication was performed.
 
 ## Latest evidence from both runs

@@ -2,6 +2,10 @@
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
+## New header-proxy evidence — baseline d93cf87
+
+Run40041664648 passes native and9/10 GUI tests. Full retained phase trees now confirm Name/Source/Size/Installed/Last Opened are not hittable before selection; only Version is hittable. States remain unchanged after Details/sorts. No layout or sequencing cause is established. A four-case native proxy comparison is prepared for the same hosted runtime; original ten GUI tests remain unchanged/failing until proven otherwise. Local comparison/build/fixtures pass, but affected-runtime native-vs-XCTest classification remains pending. See [HEADER-PROXIES.md](HEADER-PROXIES.md).
+
 ## Persistent Source hit-testing investigation — baseline271cd13
 
 Both latest runs pass the native pipeline and9/10 GUI tests. Source is fully visible but not hittable after Version twice; generic compact-window fixes are no longer supported by the evidence. Current attachments lack full ancestry and earlier phase states. A local synthetic actual-InventoryView probe on macOS27 activates native Source in both directions and retains selection, but cannot classify the macOS26.6.2/XCTest defect. Only the confirmed clickVisible fall-through bug and test diagnostics/assertions are corrected locally. Root framework cause and hosted GUI success remain unconfirmed. See [Source header report](SOURCE-HEADER.md).
