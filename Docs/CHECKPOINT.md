@@ -106,3 +106,38 @@ README/SPEC/security/source matrix/UNINSTALL/verification updated. Xcode project
 Current repository HEAD inspected in this pass is 1cc7ac49d37ee1273eb6a649bb41456e633acbbf. The earlier LICENSE-only/55f7ea9 statements above describe historical handoffs; the current baseline already tracks 85 files. This execution made no commits or index changes.
 
 Final packaging checks: ZIP extraction, signature, build102/executable/ICNS matches and actual demo GUI pass. DMG integrity/read-only mount contents/signature/build102/icon checks pass; detached safely. Release executable has no developer home path. Manifest/link/privacy review passes with 87 inputs. Source archive/checksums regenerated after final docs. No new source changes after the passing 91-test run and native build.
+
+
+## Current handoff — GitHub CI repair candidate, build 102
+
+Working baseline a7d2a9c; original failed run used older 1cc7ac49. Split InventoryView's large body into typed view/toolbar boundaries, preserving state, sorting/filtering/table interactions/settings/uninstall presentation. Both workflows now select standard macos-26 arm64 and pinned preinstalled Xcode 26.5, verify Swift 6.3/SDK 26.5 and log environment details. Swift helper honors DEVELOPER_DIR and resolves Swift via xcrun. Shared scheme and generator set --ui-testing on the Xcode unit-test app host. Synthetic fixtures/simulation only in CI; opt-in live checks disabled. Primary build/unit/package checks and explicitly reported XCUITest run are separate jobs; a failed GUI attempt remains a failed/incomplete result.
+
+Fresh local SwiftPM build and 91-test report (3 live integrations skipped) pass. Optimized arm64 packaging and artifact validation pass; shell/YAML/XML/plist/whitespace/publication checks pass. No local Xcode retry, Apple authentication, real uninstall, settings/cache clearing or new GUI verification. Revised cloud execution awaits approval to commit/push; do not mistake prepared workflows for executed checks. See [CI.md](CI.md). No staging/commit/push/tag/release occurred in this repair. Existing earlier execution evidence remains historical.
+
+
+## PR #1 — confirmed GUI execution investigation
+
+Run40028914665/e5db815 passes the entire primary native pipeline, including Xcode unit tests and artifact packaging/validation. Actual GUI run executes10 tests with11 failure records. Downloaded xcresult hierarchies show inventory.table as Outline and the settings toggle as CheckBox. Screen recordings show fixed-height settings footer beneath the Dock; Cancel/Done clicks hit System Settings, leaving the same draft open and preventing About presentation. No cross-test settings leak or search/refresh bug is demonstrated by these failures.
+
+Local corrections adapt Settings presentation height to usable display, identify the actual inventory/toggle roles and require visible footer controls, sheet dismissal and About window creation. All10 tests remain; assertion sites55→69. Local SwiftPM build/91-test report (3 live integrations skipped), UI Swift parser and whitespace/static source checks pass. Corrected hosted GUI execution remains pending approval to commit/push. Version1.0.0/build102, Xcode26.5, removal safety and fixture-only execution unchanged. No real cleanup/removal, Git commit/push/merge or Apple authentication. See [investigation](XCUITEST-INVESTIGATION.md).
+
+
+## Current handoff — compact screen, baseline0811660
+
+PR40031376348 native all passes; GUI8/10 pass. Push40031370109 sameSHA native all passes; GUI4/10 pass. Both bundles/logs downloaded and decoded. PR outer1050 width contains1337-wide split rootedx=-143; push actual1320-wide window beginsx=-148 on1024 display. Settings/Columns physically inaccessible. Source is on-screen but native header hit testing/auto-scroll fails, so do not equate it with an off-screen control or claim its separate AppKit root cause proven.
+
+Local native window containment, compact VSplitView details, fixed compact details actions and actual-control hittability assertions implemented. All10 GUI methods remain. Build/fixture tests and four compiled geometry-policy cases pass; corrected hosted GUI remains pending approval to commit/push. Xcode26.5/build102/safety code untouched. See [COMPACT-LAYOUT.md](COMPACT-LAYOUT.md) for limits and next checks. No commit/push/merge/tag/publication or real removal/cleanup.
+
+
+## Current handoff — Source header, baseline271cd13
+
+Latest PR40039301815 and push40039297430 pass native; GUI9/10. Full artifacts/logs reviewed; Source frame544,158,137,28 is visibly contained but XCTest hittability fails after Version twice. Actual hostmacOS26.6.2/Xcode26.5/SDK26.5. No full ancestor/pre-sort snapshots retained in those bundles. Native semantic/header-hit probe using actualInventoryView in isolated --ui-testing works locally onmacOS27; this does not prove affected-runtime behavior or XCTest success.
+
+Confirmed helper bug fixed: failed existence/hittability throws via failing XCTUnwrap and cannot continue into click. Phase screenshots/full accessibility trees and real row-order/selected-identity assertions added to existing six-header/two-directions test; all10 methods retained. Core Source reverse/header-switch assertions added. Local build/91-test report (3 live integrations skipped), UI syntax and whitespace checks pass. No unsupported production workaround, layout change, safety/version/toolchain change or Git publication. A fresh approved hosted run is needed to classify/fix the remaining native-vs-XCTest cause. See [SOURCE-HEADER.md](SOURCE-HEADER.md).
+
+
+## Current handoff — new diagnostic evidence, baseline d93cf87
+
+PR40041664648 native passes, GUI9/10. Retained phase trees independently confirm only Version hittable BEFORE selection; all other headers false despite visible, contained bounds. No state change after Details or Version sorts. Do not repeat prior layout/sequence attribution. Confirmed helper now stops on its single failing XCTUnwrap.
+
+Four-case standalone native proxy diagnostic prepared under Diagnostics/ plus scripts/probe-header-proxies.sh; CI runs it after GUI and uploads logs without overriding GUI failure. Compare key-path/custom/customized/actual inventory on macOS26.6.2. LocalmacOS27 comparisons expose AXPress on all headers, native Source hit results/directions/selection work; not an XCTest pass or proof on the affected runtime. Local build/91-test report (3 live skipped)/syntax checks pass. All10 GUI methods and production source/build102/Xcode26.5/safety remain unchanged. No commit/push/merge or real removal. See [HEADER-PROXIES.md](HEADER-PROXIES.md); hosted classification still needs approved push.

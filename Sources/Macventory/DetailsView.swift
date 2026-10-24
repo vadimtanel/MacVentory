@@ -7,6 +7,7 @@ struct DetailsView: View {
     @EnvironmentObject private var model: AppModel
     let item: SoftwareItem
     let unusedDays: Int
+    var compact = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -48,15 +49,27 @@ struct DetailsView: View {
                     if let report = model.reports.first(where: { $0.source == source.source }) { field(source.source.title + " Scanner", report.state.title + (report.message.isEmpty ? "" : "\n" + report.message)) }
                 }
                 Divider()
-                if let path = item.path {
-                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder")
-                    Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path")
-                }
-                Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
-                Button("Refresh Metadata") { model.refreshMetadata(item.id) }.disabled(model.scanning || item.path == nil).controlHelp(model.scanning ? "Wait for the current scan" : item.path == nil ? "No installation path is available" : "Refresh metadata for this application")
-                Button("Uninstall…", role: .destructive) { onUninstall() }.disabled(model.scanning || model.uninstallWorking).accessibilityIdentifier("inventory.uninstall").controlHelp(model.scanning ? "Wait for the scan to finish before preparing uninstall" : "Uninstall Selected Application").accessibilityHint("Review the exact application and removal plan. No removal occurs until confirmed.")
+                if !compact { actionButtons }
             }.padding(20).textSelection(.enabled)
         }.accessibilityIdentifier("inventory.details")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if compact {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { actionButtons }
+                        VStack(alignment: .leading, spacing: 8) { actionButtons }
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
+                }
+            }
+    }
+    @ViewBuilder
+    private var actionButtons: some View {
+        if let path = item.path {
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder")
+            Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path")
+        }
+        Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
+        Button("Refresh Metadata") { model.refreshMetadata(item.id) }.disabled(model.scanning || item.path == nil).controlHelp(model.scanning ? "Wait for the current scan" : item.path == nil ? "No installation path is available" : "Refresh metadata for this application")
+        Button("Uninstall…", role: .destructive) { onUninstall() }.disabled(model.scanning || model.uninstallWorking).accessibilityIdentifier("inventory.uninstall").controlHelp(model.scanning ? "Wait for the scan to finish before preparing uninstall" : "Uninstall Selected Application").accessibilityHint("Review the exact application and removal plan. No removal occurs until confirmed.")
     }
     private func field(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.callout).fixedSize(horizontal: false, vertical: true) }

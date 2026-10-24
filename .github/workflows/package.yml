@@ -1,20 +1,35 @@
-name: Prepare local-style release artifacts
+name: Prepare unsigned verification artifacts
 on:
   workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+  MACVENTORY_LIVE_TESTS: '0'
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Tests
-        run: bash scripts/swift-tool.sh test --disable-xctest
-      - name: Create ZIP, DMG and checksums
-        run: bash scripts/package-release.sh
+      - name: Verify runner and pinned toolchain
+        run: bash scripts/verify-ci-toolchain.sh
+      - name: Swift package build and fixture tests
+        run: |
+          bash scripts/swift-tool.sh build 2>&1 | tee build/verification/swift-build.log
+          bash scripts/swift-tool.sh test --disable-xctest 2>&1 | tee build/verification/swift-tests.log
+      - name: Create ad-hoc signed arm64 app, ZIP, DMG and checksums
+        run: bash scripts/package-release.sh 2>&1 | tee build/verification/package.log
+      - name: Validate artifacts
+        run: bash scripts/validate-artifacts.sh 2>&1 | tee build/verification/artifacts.log
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Macventory-unsigned-release-candidate
-          path: artifacts/*
+          name: Macventory-unsigned-arm64-candidate
+          path: |
+            artifacts/*
+            build/verification/
           retention-days: 14

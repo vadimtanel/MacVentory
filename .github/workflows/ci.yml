@@ -5,41 +5,112 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
+# macos-26 is the standard Apple Silicon image. Do not use its changing default Xcode.
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+  MACVENTORY_LIVE_TESTS: '0'
 jobs:
   native:
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-15, macos-15-intel]
-    continue-on-error: ${{ matrix.runner == 'macos-15-intel' }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-          sw_vers
+      - name: Verify runner and pinned toolchain
+        run: bash scripts/verify-ci-toolchain.sh
       - name: Swift package build
-        run: bash scripts/swift-tool.sh build
-      - name: Swift package tests
-        run: bash scripts/swift-tool.sh test --disable-xctest
-      - name: Xcode build and unit/UI tests
-        run: >-
-          xcodebuild -project Macventory.xcodeproj -scheme Macventory
-          -destination 'platform=macOS' -derivedDataPath build/DerivedData
-          -resultBundlePath build/Macventory.xcresult
-          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual test
-      - name: Package app
-        run: bash scripts/build-app.sh release
+        run: bash scripts/swift-tool.sh build 2>&1 | tee build/verification/swift-build.log
+      - name: Swift package tests (synthetic fixtures)
+        run: bash scripts/swift-tool.sh test --disable-xctest 2>&1 | tee build/verification/swift-tests.log
+      - name: Xcode project build
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build \
+            2>&1 | tee build/verification/xcode-build.log
+      - name: Compile all Xcode test targets
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build-for-testing \
+            2>&1 | tee build/verification/xcode-test-build.log
+      - name: Xcode unit tests (isolated app host)
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            -resultBundlePath build/verification/UnitTests.xcresult \
+            -only-testing:MacventoryTests -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test-without-building \
+            2>&1 | tee build/verification/xcode-unit-tests.log
+      - name: Package arm64 app, ZIP, DMG and source
+        run: bash scripts/package-release.sh 2>&1 | tee build/verification/package.log
+      - name: Validate arm64 artifacts
+        run: bash scripts/validate-artifacts.sh 2>&1 | tee build/verification/artifacts.log
       - name: Upload verification artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verification-${{ matrix.runner }}
+          name: verification-arm64
           path: |
-            build/Macventory.xcresult
+            build/verification/
             build/Macventory.app
+            artifacts/*
+          if-no-files-found: warn
+          retention-days: 14
+  ui:
+    name: XCUITest (synthetic inventory and simulated removal)
+    runs-on: macos-26
+    needs: native
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify runner and pinned toolchain
+        run: bash scripts/verify-ci-toolchain.sh
+      - name: XCUITest
+        id: gui
+        # Keep the primary build/package result independent of hosted GUI availability.
+        # An unsuccessful attempt is never reported as a passing GUI test.
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            -resultBundlePath build/verification/UITests.xcresult \
+            -only-testing:MacventoryUITests/MacventoryUITests -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test \
+            2>&1 | tee build/verification/xcode-ui-tests.log
+      - name: Compare synthetic native header proxies on the hosted runtime
+        if: always()
+        timeout-minutes: 5
+        run: bash scripts/probe-header-proxies.sh "$PWD/build/DerivedData/Build/Products/Debug"
+      - name: Diagnose Source header with actual element-relative mouse clicks
+        if: always()
+        timeout-minutes: 3
+        run: |
+          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            -resultBundlePath build/verification/HeaderPointerDiagnostic.xcresult \
+            -only-testing:MacventoryUITests/MacventoryHeaderPointerDiagnostics -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test-without-building \
+            2>&1 | tee build/verification/header-pointer-diagnostic.log
+      - name: Report actual GUI test outcome
+        if: always()
+        env:
+          GUI_OUTCOME: ${{ steps.gui.outcome }}
+        run: |
+          if [[ "$GUI_OUTCOME" == success ]]; then
+            echo 'XCUITest passed using --ui-testing fixtures and simulated removal.' | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::XCUITest did not pass (outcome: $GUI_OUTCOME). Inspect the uploaded log and xcresult for assertion failures or hosted GUI/permission restrictions."
+            echo "XCUITest did NOT pass (outcome: $GUI_OUTCOME). GUI verification remains incomplete; inspect verification-ui artifacts to distinguish a test failure from a hosted-runner limitation. Primary arm64 checks are independent." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-ui
+          path: build/verification/
           if-no-files-found: warn
           retention-days: 14
