@@ -2,6 +2,26 @@
 
 **Local build and review candidate.** Version1.0.0 does not establish every platform/distribution check. No commit, tag, push, release, remote or repository-setting change was performed. No real uninstall, package cleanup, installed-software modification, user-data deletion or real inventory-cache clearing occurred.
 
+## New header-proxy evidence — baseline d93cf87
+
+Run40041664648 passes native and9/10 GUI tests. Full retained phase trees now confirm Name/Source/Size/Installed/Last Opened are not hittable before selection; only Version is hittable. States remain unchanged after Details/sorts. No layout or sequencing cause is established. A four-case native proxy comparison is prepared for the same hosted runtime; original ten GUI tests remain unchanged/failing until proven otherwise. Local comparison/build/fixtures pass, but affected-runtime native-vs-XCTest classification remains pending. See [HEADER-PROXIES.md](HEADER-PROXIES.md).
+
+## Persistent Source hit-testing investigation — baseline271cd13
+
+Both latest runs pass the native pipeline and9/10 GUI tests. Source is fully visible but not hittable after Version twice; generic compact-window fixes are no longer supported by the evidence. Current attachments lack full ancestry and earlier phase states. A local synthetic actual-InventoryView probe on macOS27 activates native Source in both directions and retains selection, but cannot classify the macOS26.6.2/XCTest defect. Only the confirmed clickVisible fall-through bug and test diagnostics/assertions are corrected locally. Root framework cause and hosted GUI success remain unconfirmed. See [Source header report](SOURCE-HEADER.md).
+
+## Latest compact-display correction candidate
+
+Both0811660 workflows pass primary native validation. PR40031376348 runs10 GUI tests with2 failures; push40031370109 has6 failures. Full logs/xcresult/video evidence shows window/content overflow; Source is visibly on-screen but native hit testing fails. Display-contained window geometry and native vertical details on compact widths are prepared. Local build/fixtures and four actual geometry-policy cases pass; corrected hosted GUI and larger-screen rendered interactions remain unverified. See [compact layout report](COMPACT-LAYOUT.md). No commits or real removals in this investigation.
+
+## Confirmed cloud native pass; GUI runtime corrections pending
+
+[Run 40028914665](https://github.com/vadimtanel/MacVentory/actions/runs/40028914665) passed SwiftPM, Xcode application/test compilation, Xcode unit tests, arm64 packaging and artifact validation. The GUI suite actually executed 10 tests with 11 failure records. Full logs and xcresult accessibility/video evidence identify incorrect table/toggle roles and a compact-screen settings sheet whose footer is covered by the Dock. Local corrections preserve all tests and strengthen transition assertions. Local build/fixture tests pass; the corrected GUI suite has not run. See [XCUITest investigation](XCUITEST-INVESTIGATION.md). This supersedes older statements that no hosted Xcode verification has run; it does not claim GUI success.
+
+## CI repair candidate — build 102
+
+See [cloud CI report](CI.md) for original GitHub log evidence, the SwiftUI decomposition, pinned macos-26/Xcode 26.5 environment, checks and pending approval boundary. Fresh local SwiftPM debug build passed. Swift Testing reports 91 tests/12 suites passed with 3 opt-in live integrations skipped in this repair. Optimized arm64 app/ZIP/DMG/source packaging and automated artifact validation passed. No new GUI run, local Xcode run or revised GitHub run is claimed. Real removal, settings/cache clearing and Git publication remain unperformed.
+
 ## Current standalone removal pass — build 102
 
 - **91 tests / 12 suites pass**, including all 3 enabled read-only live integrations and 20 uninstall/standalone test methods. All prior safety tests remain; the inferred-source expectation now reflects independently established Trash eligibility. Parameterized cases cover service/provider markers. No real removal adapter is invoked.
