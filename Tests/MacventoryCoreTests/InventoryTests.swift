@@ -33,7 +33,59 @@ private struct NativeProcessFixture: Sendable {
     let executable: URL
     var started: URL { URL(fileURLWithPath: executable.path + ".started") }
     var command: InventoryCommand { .managerVersion(executable: executable.path) }
-    init(_ box: Sandbox, slow: Bool = false) throws {
+    private static func tool(_ path: String, _ arguments: [String], environment: [String: String]) throws -> String {
+        let process = Process(), output = Pipe()
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        let context = "Native fixture tool \(path) \(arguments); DEVELOPER_DIR=\(environment["DEVELOPER_DIR"] ?? "<xcode-select>"); SDKROOT=\(environment["SDKROOT"] ?? "<resolve macosx>"); TOOLCHAINS=<unset> (lookup: default)"
+        do { try process.run() }
+        catch { throw ScanError.process("\(context): launch failed: \(error)") }
+        try output.fileHandleForWriting.close()
+        // Drain while running so compiler diagnostics cannot fill a pipe and deadlock.
+        let diagnostics = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw ScanError.process("\(context): exit \(process.terminationStatus)\n\(diagnostics)")
+        }
+        return diagnostics.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func compilerEnvironment(_ inherited: [String: String]) throws -> [String: String] {
+        // Hosted XCTest omits DEVELOPER_DIR but supplies its Xcode framework paths.
+        // Use those only to identify that Xcode; never inject its test libraries into tools.
+        let hostDeveloper = inherited["DYLD_FRAMEWORK_PATH"]?.split(separator: ":").compactMap { path -> String? in
+            let suffix = "/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+            guard path.hasSuffix(suffix) else { return nil }
+            return String(path.dropLast(suffix.count)) + "/Contents/Developer"
+        }.first
+        // An allowlist also excludes stale SDKROOT/TOOLCHAINS, DYLD_* and __XPC_DYLD_*.
+        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"]
+        let selected = try inherited["DEVELOPER_DIR"] ?? hostDeveloper ?? tool("/usr/bin/xcode-select", ["-p"], environment: environment)
+        var developer = URL(fileURLWithPath: selected)
+        if developer.pathExtension == "app" { developer.appendPathComponent("Contents/Developer") }
+        developer = developer.resolvingSymlinksInPath().standardizedFileURL
+        environment["DEVELOPER_DIR"] = developer.path
+        let sdk = try tool("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"], environment: environment)
+        let compiler = try tool("/usr/bin/xcrun", ["--sdk", "macosx", "--toolchain", "default", "--find", "clang"], environment: environment)
+        let sdkURL = URL(fileURLWithPath: sdk).resolvingSymlinksInPath()
+        let compilerURL = URL(fileURLWithPath: compiler).resolvingSymlinksInPath()
+        guard sdkURL.path.hasPrefix(developer.path + "/"), compilerURL.path.hasPrefix(developer.path + "/"),
+              FileManager.default.fileExists(atPath: sdkURL.appendingPathComponent("usr/include/stdio.h").path),
+              FileManager.default.isExecutableFile(atPath: compilerURL.path) else {
+            throw ScanError.process("Native fixture resolved inconsistent tools: developer=\(developer.path), compiler=\(compiler), SDK=\(sdk)")
+        }
+        environment["SDKROOT"] = sdkURL.path
+        environment["CC"] = compilerURL.path
+        return environment
+    }
+    init(_ box: Sandbox, slow: Bool = false, compilerEnvironment inherited: [String: String] = ProcessInfo.processInfo.environment) throws {
         let directory = box.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         executable = directory.appendingPathComponent("nix")
@@ -54,11 +106,11 @@ private struct NativeProcessFixture: Sendable {
             return write(STDOUT_FILENO, "fixture\n", 8) == 8 ? 0 : 3;
         }
         """#.write(to: source, atomically: true, encoding: .utf8)
-        let compiler = Process()
-        compiler.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
-        compiler.arguments = [source.path, "-DFIXTURE_SLOW=" + (slow ? "1" : "0"), "-o", executable.path]
-        try compiler.run(); compiler.waitUntilExit()
-        guard compiler.terminationStatus == 0 else { throw ScanError.process("Could not compile the isolated process fixture") }
+        let environment = try Self.compilerEnvironment(inherited)
+        let compiler = try #require(environment["CC"]), sdk = try #require(environment["SDKROOT"])
+        print("Native fixture tools: DEVELOPER_DIR=\(environment["DEVELOPER_DIR"] ?? "<unset>"), clang=\(compiler), SDKROOT=\(sdk), TOOLCHAINS=<unset> (lookup: default)")
+        _ = try Self.tool(compiler, ["-isysroot", sdk, source.path,
+            "-DFIXTURE_SLOW=" + (slow ? "1" : "0"), "-o", executable.path], environment: environment)
     }
     func requireStoppedIfStarted() async throws {
         guard FileManager.default.fileExists(atPath: started.path) else { return }
@@ -458,6 +510,38 @@ struct InfrastructureTests {
         for command in commands {
             let arguments = try command.arguments()
             #expect(!arguments.contains { ["uninstall", "install", "update", "upgrade", "remove", "sudo"].contains($0) })
+        }
+    }
+    @Test(arguments: [false, true]) func nativeFixtureCompilesWithConflictingHostEnvironment(explicitDeveloper: Bool) async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let baseline = try NativeProcessFixture.compilerEnvironment(ProcessInfo.processInfo.environment)
+        let selected = try #require(baseline["DEVELOPER_DIR"])
+        // Model a hosted Xcode identity using a test-owned alias to the installed tools.
+        let contents = box.root.appendingPathComponent("FixtureXcode.app/Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let developer = contents.appendingPathComponent("Developer")
+        try FileManager.default.createSymbolicLink(atPath: developer.path, withDestinationPath: selected)
+        var inherited = ["SDKROOT": box.root.appendingPathComponent("Missing.sdk").path,
+            "TOOLCHAINS": "missing-toolchain", "CC": "/missing/clang",
+            "DYLD_FRAMEWORK_PATH": developer.path + "/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+            "DYLD_LIBRARY_PATH": "/missing/libraries", "DYLD_INSERT_LIBRARIES": "/missing/injection.dylib",
+            "__XPC_DYLD_FRAMEWORK_PATH": "/missing/frameworks"]
+        if explicitDeveloper {
+            inherited["DEVELOPER_DIR"] = developer.path
+            inherited["DYLD_FRAMEWORK_PATH"] = box.root.appendingPathComponent("UnavailableXcode.app").path + "/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+        }
+        let sanitized = try NativeProcessFixture.compilerEnvironment(inherited)
+        #expect(sanitized == baseline)
+        let fixture = try NativeProcessFixture(box, compilerEnvironment: inherited)
+        #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+        if explicitDeveloper {
+            inherited["DEVELOPER_DIR"] = box.root.appendingPathComponent("MissingDeveloper").path
+            do {
+                _ = try NativeProcessFixture.compilerEnvironment(inherited)
+                Issue.record("An invalid explicit developer directory must fail, not silently select another Xcode")
+            } catch ScanError.process(let diagnostic) {
+                #expect(diagnostic.contains("/usr/bin/xcrun") && diagnostic.contains("DEVELOPER_DIR=") && diagnostic.contains("exit "))
+            }
         }
     }
     @Test func processOutputLimitAndTimeoutAreEnforced() async throws {
