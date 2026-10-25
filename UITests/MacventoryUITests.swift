@@ -46,6 +46,7 @@ final class MacventoryUITests: XCTestCase {
             try clickVisible(search)
             search.typeKey("a", modifierFlags: .command)
             search.typeText(name)
+            XCTAssertEqual(search.value as? String, name)
             try openDetailsReview(name, in: app)
             let sheet = app.sheets.firstMatch
             XCTAssertTrue(sheet.waitForExistence(timeout: 5))
@@ -104,22 +105,93 @@ final class MacventoryUITests: XCTestCase {
 
     private func openDetailsReview(_ name: String, in app: XCUIApplication,
                                    file: StaticString = #filePath, line: UInt = #line) throws {
+        let details = try selectInventoryItem(name, in: app, file: file, line: line)
+        let buttons = app.buttons.matching(identifier: "inventory.uninstall")
+        _ = try XCTUnwrap(buttons.count == 1 ? buttons.firstMatch : nil,
+                          "Exactly one active Uninstall target", file: file, line: line)
+        let button = buttons.firstMatch
+        let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
+        let metadata = details.scrollViews["inventory.details.scroll"]
+        let window = app.windows.firstMatch
+        let coordinate = button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let frame = button.frame, point = coordinate.screenPoint
+        recordDetailsInteraction(app, phase: name + " — before Uninstall pointer click")
+        _ = try XCTUnwrap(app.state == .runningForeground && !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
+            actions.exists && metadata.exists && button.isEnabled && frame.width > 0 && frame.height > 0 &&
+            point.x.isFinite && point.y.isFinite && frame.contains(point) &&
+            [window.frame, details.frame, actions.frame].allSatisfy { $0.contains(frame) && $0.contains(point) } &&
+            !metadata.frame.intersects(frame) ? button : nil,
+            "The unique enabled action and its real pointer point must be inside the foreground Details footer, outside metadata and without a modal overlay",
+            file: file, line: line)
+        // The hosted runtime can report isHittable=false for this visible button.
+        // Record it, then test one actual element-relative mouse click and its result.
+        coordinate.click()
+        try assertFreshReview(name, in: app, file: file, line: line)
+    }
+
+    private func selectInventoryItem(_ name: String, in app: XCUIApplication,
+                                     file: StaticString = #filePath, line: UInt = #line) throws -> XCUIElement {
         app.activate()
         XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
-        try clickVisible(inventoryTable(app).staticTexts[name].firstMatch, file: file, line: line)
-        let details = try selectedDetails(name, in: app, file: file, line: line)
-        let buttons = app.buttons.matching(identifier: "inventory.uninstall")
-        XCTAssertEqual(buttons.count, 1, "Exactly one active Uninstall target", file: file, line: line)
-        let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
-        let button = buttons.firstMatch
-        _ = try XCTUnwrap(actions.exists && button.isEnabled &&
-            app.windows.firstMatch.frame.contains(button.frame) && actions.frame.contains(button.frame) ? button : nil,
-            "The enabled action must be inside the persistent Details footer", file: file, line: line)
-        try clickVisible(button, file: file, line: line)
+        let table = inventoryTable(app)
+        let text = table.staticTexts[name].firstMatch
+        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && table.staticTexts.matching(identifier: name).count == 1 ? text : nil,
+                          "Resolve one exact fixture name in the native table", file: file, line: line)
+        let viewport = inventoryViewport(table, in: app)
+        let coordinate = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let frame = text.frame, point = coordinate.screenPoint
+        let evidence = XCTAttachment(string: "name=\(name) state=\(app.state.rawValue) hittable=\(text.isHittable) " +
+            "text=\(frame) window/table/viewport=\([app.windows.firstMatch.frame, table.frame, viewport.frame]) point=\(point)")
+        evidence.name = name + " — native row selection pointer geometry"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        _ = try XCTUnwrap(app.state == .runningForeground && viewport.exists && !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
+            frame.width > 0 && frame.height > 0 && point.x.isFinite && point.y.isFinite && frame.contains(point) &&
+            [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(frame) && $0.contains(point) } ? text : nil,
+            "Select through the exact visible cell text, never a clipped row container or guessed point", file: file, line: line)
+        coordinate.click()
+        // A sent click is not proof of selection. No retry or state injection.
+        return try selectedDetails(name, in: app, file: file, line: line)
+    }
+
+    private func inventoryViewport(_ table: XCUIElement, in app: XCUIApplication) -> XCUIElement {
+        let nested = table.scrollViews.firstMatch
+        return nested.exists ? nested : app.scrollViews.containing(.any, identifier: "inventory.table").firstMatch
+    }
+
+    private func assertFreshReview(_ name: String, in app: XCUIApplication,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
         let sheet = app.sheets.firstMatch
         _ = try XCTUnwrap(sheet.waitForExistence(timeout: 5) ? sheet : nil,
-                          "Clicking the real action opens its management sheet", file: file, line: line)
-        assertText(name, in: sheet, file: file, line: line)
+                          "Native activation must open the Management sheet", file: file, line: line)
+        let title = sheet.staticTexts["management.title"]
+        let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@ OR value BEGINSWITH %@", name, name, name + " "), object: title)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [identity], timeout: 5) == .completed ? sheet : nil,
+                          "The Management title must identify the selected fixture", file: file, line: line)
+        XCTAssertTrue(sheet.buttons["management.confirm"].exists, file: file, line: line)
+        XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled, "Opening review must not authorize execution", file: file, line: line)
+        XCTAssertFalse(sheet.checkBoxes["management.acknowledge"].isEnabled, file: file, line: line)
+        XCTAssertFalse(sheet.buttons["management.ok"].exists, file: file, line: line)
+        XCTAssertFalse(sheet.staticTexts["operation.result.title"].exists, file: file, line: line)
+        let unselected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 0 OR value == %@", "0"), object: sheet.checkBoxes["management.uninstall"])
+        XCTAssertEqual(XCTWaiter.wait(for: [unselected], timeout: 5), .completed, file: file, line: line)
+    }
+
+    private func recordDetailsInteraction(_ app: XCUIApplication, phase: String) {
+        let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
+        let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
+        let button = app.buttons["inventory.uninstall"]
+        let evidence = XCTAttachment(string: "phase=\(phase) state=\(app.state.rawValue) " +
+            "window=\(app.windows.firstMatch.frame) details=\(details.frame) metadata=\(details.scrollViews["inventory.details.scroll"].frame) " +
+            "footer=\(actions.frame) footerValue=\(String(describing: actions.value)) " +
+            "button=\(button.frame) enabled=\(button.isEnabled) hittable=\(button.isHittable)\n" + app.debugDescription)
+        evidence.name = phase + " — Details geometry and accessibility"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = phase + " — foreground screen"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testDetailsActionsStayVisibleAcrossLayoutsAndLongMetadata() throws {
@@ -134,13 +206,30 @@ final class MacventoryUITests: XCTestCase {
             corner.press(forDuration: 0.2, thenDragTo: corner.withOffset(CGVector(dx: 1024 - window.frame.width, dy: 0)))
         }
         XCTAssertEqual(window.frame.width, 1024, accuracy: 8)
-        try clickVisible(inventoryTable(app).staticTexts["macventory"].firstMatch)
+        _ = try selectInventoryItem("macventory", in: app)
         for layout in ["compact", "regular"] {
             if layout == "regular" { try clickVisible(app.buttons["Hide Sidebar"]) }
             let details = try selectedDetails("macventory", in: app)
             let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
-            let mode = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", layout), object: actions)
-            XCTAssertEqual(XCTWaiter.wait(for: [mode], timeout: 5), .completed)
+            let metadata = details.scrollViews["inventory.details.scroll"]
+            let tableViewport = inventoryViewport(inventoryTable(app), in: app)
+            recordDetailsInteraction(app, phase: layout + " — layout geometry")
+            XCTAssertTrue(metadata.exists && actions.exists && tableViewport.exists)
+            // Allow only native bezel/separator rounding at the shared boundary;
+            // the footer/metadata overlap checks below remain strict.
+            if layout == "compact" {
+                XCTAssertGreaterThanOrEqual(metadata.frame.minY, tableViewport.frame.maxY - 2, "Compact Details must be below the inventory viewport")
+                XCTAssertGreaterThan(min(metadata.frame.maxX, tableViewport.frame.maxX) - max(metadata.frame.minX, tableViewport.frame.minX), 0)
+            } else {
+                XCTAssertGreaterThanOrEqual(metadata.frame.minX, tableViewport.frame.maxX - 2, "Regular Details must be beside the inventory viewport")
+                XCTAssertGreaterThan(min(metadata.frame.maxY, tableViewport.frame.maxY) - max(metadata.frame.minY, tableViewport.frame.minY), 0)
+            }
+            XCTAssertTrue(window.frame.contains(metadata.frame) && window.frame.contains(actions.frame))
+            XCTAssertFalse(metadata.frame.intersects(actions.frame), "The footer must reserve space rather than overlay metadata")
+            for control in actions.buttons.allElementsBoundByIndex {
+                XCTAssertTrue(window.frame.contains(control.frame) && actions.frame.contains(control.frame))
+                XCTAssertFalse(metadata.frame.intersects(control.frame))
+            }
             let button = app.buttons["inventory.uninstall"]
             XCTAssertEqual(app.buttons.matching(identifier: "inventory.uninstall").count, 1)
             let frame = button.frame
@@ -151,6 +240,13 @@ final class MacventoryUITests: XCTestCase {
             scroll.scroll(byDeltaX: 0, deltaY: 2000)
             XCTAssertEqual(button.frame, frame)
             try openDetailsReview("macventory", in: app)
+            XCTAssertEqual(app.sheets.checkBoxes["management.uninstall"].label, "Remove Orphaned Installation")
+            try clickVisible(app.sheets.buttons["management.cancel"])
+            // Independent native keyboard route: focus the same real row and use
+            // the table's existing Return primary action, without a pointer fallback.
+            _ = try selectInventoryItem("macventory", in: app)
+            app.typeKey(.return, modifierFlags: [])
+            try assertFreshReview("macventory", in: app)
             XCTAssertEqual(app.sheets.checkBoxes["management.uninstall"].label, "Remove Orphaned Installation")
             try clickVisible(app.sheets.buttons["management.cancel"])
         }

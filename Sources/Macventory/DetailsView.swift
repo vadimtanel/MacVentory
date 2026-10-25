@@ -7,7 +7,6 @@ struct DetailsView: View {
     @EnvironmentObject private var model: AppModel
     let item: SoftwareItem
     let unusedDays: Int
-    var compact = false
     var body: some View {
         VStack(spacing: 0) { metadata }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -17,7 +16,6 @@ struct DetailsView: View {
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("inventory.details.actions")
-                    .accessibilityValue(compact ? "compact" : "regular")
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("inventory.details")

@@ -142,7 +142,7 @@ struct InventoryView: View {
                     // compact displays, rather than expanding the entire split view.
                     VSplitView {
                         table.frame(minHeight: 150)
-                        details(item, compact: true).frame(minHeight: 150, idealHeight: 210, maxHeight: 260)
+                        details(item).frame(minHeight: 150, idealHeight: 210, maxHeight: 260)
                     }
                 }
             } else {
@@ -151,8 +151,8 @@ struct InventoryView: View {
         }
     }
 
-    private func details(_ item: SoftwareItem, compact: Bool = false) -> some View {
-        DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays, compact: compact)
+    private func details(_ item: SoftwareItem) -> some View {
+        DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays)
             .id(item.id)
     }
 
