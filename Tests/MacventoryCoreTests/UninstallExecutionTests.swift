@@ -502,3 +502,32 @@ extension UninstallExecutionTests {
         #expect(FileSystem.exists(payload))
     }
 }
+
+/// Simulates a right that expires while read-only manager preflight is suspended.
+/// No Authorization Services prompt, XPC connection or privileged service is used.
+private final class ExpiringFixtureAdminAuthorization: MacPortsRequestAuthorizing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var attempts = 0
+    var count: Int { lock.withLock { attempts } }
+    func validate(_ form: Data) throws {
+        let attempt = lock.withLock { attempts += 1; return attempts }
+        if attempt > 1 { throw ScanError.process("Fixture administrator right expired after preflight") }
+    }
+}
+extension UninstallExecutionTests {
+    @Test func authorizationExpiringAfterPreflightCannotReachPrivilegedEffect() async throws {
+        let box = try Sandbox.removal(); defer { box.clean() }
+        let (registry, _, marker) = try managerFixture(box)
+        let adapter = ManagedRemovalAdapter(boundary: registry, security: FixtureManagerSecurity(executable: "/opt/local/bin/port", marker: marker))
+        var item = SoftwareItem(name: "tool", kind: .package, source: .macPorts, packageID: "tool")
+        item.version = "1.0_0+ssl"; item.attributes["Prefix"] = "/opt/local"; item.attributes["Manager executable"] = "/opt/local/bin/port"
+        let request = try MacPortsAuthorizedRequest(await adapter.prepare(item))
+        let authorizer = ExpiringFixtureAdminAuthorization()
+        await #expect(throws: (any Error).self) {
+            try await MacPortsAuthorizedOperation(adapter: adapter, authorizer: authorizer).execute(request, clientBundle: box.root.appendingPathComponent("Separate.app").path)
+        }
+        #expect(authorizer.count == 2)
+        #expect(await registry.count == 0)
+        #expect(FileSystem.exists(box.root.appendingPathComponent("payload.txt").path))
+    }
+}
