@@ -87,6 +87,8 @@ for name, directory, product_type, extension in [
         settings.update({"GENERATE_INFOPLIST_FILE": "NO", "INFOPLIST_FILE": "Resources/Info.plist", "ENABLE_HARDENED_RUNTIME": "YES"})
     if name == "MacventoryPrivilegedHelper":
         settings.update({"PRODUCT_BUNDLE_IDENTIFIER": "org.vadimtanel.Macventory.macports-helper", "CREATE_INFOPLIST_SECTION_IN_BINARY": "YES", "SKIP_INSTALL": "YES", "ENABLE_HARDENED_RUNTIME": "YES"})
+        # main.swift uses @main; Xcode tool targets otherwise infer a top-level entry point.
+        settings["OTHER_SWIFT_FLAGS"] = ["$(inherited)", "-parse-as-library"]
     if name == "MacventoryCore":
         settings.update({"DEFINES_MODULE": "YES", "SKIP_INSTALL": "YES", "INSTALL_PATH": "$(LOCAL_LIBRARY_DIR)/Frameworks"})
     if name == "MacventoryTests":
