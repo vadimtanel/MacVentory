@@ -71,6 +71,8 @@ public struct ProcessRunner: CommandRunning {
     }
     public func run(_ command: InventoryCommand) async throws -> Data {
         try Task.checkCancellation()
+        let clock = ContinuousClock(), deadline = clock.now.advanced(by: timeout)
+        guard timeout > .zero else { throw ScanError.timeout }
         let path = command.executable
         let expected: String
         switch command {
@@ -97,8 +99,9 @@ public struct ProcessRunner: CommandRunning {
             if data.isEmpty { buffer.finish(); handle.readabilityHandler = nil }
             else { buffer.append(data, limit: limit) }
         }
-        let clock = ContinuousClock(), deadline = clock.now.advanced(by: timeout)
         do {
+            try Task.checkCancellation()
+            guard clock.now < deadline else { throw ScanError.timeout }
             try process.run()
             try pipe.fileHandleForWriting.close()
             while process.isRunning || !buffer.isFinished {
@@ -111,6 +114,10 @@ public struct ProcessRunner: CommandRunning {
             try? pipe.fileHandleForReading.close()
             let (output, overflow) = buffer.snapshot()
             if overflow { throw ScanError.limit("Command output exceeded limit") }
+            // A fast child and its reader may finish before the loop is entered.
+            // Success must still honor cancellation and the original deadline.
+            try Task.checkCancellation()
+            guard clock.now < deadline else { throw ScanError.timeout }
             guard process.terminationStatus == 0 else { throw ScanError.process("\(expected) query failed (exit \(process.terminationStatus))") }
             return output
         } catch {

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import MacventoryCore
 
@@ -25,6 +26,50 @@ struct Sandbox {
         return root.appendingPathComponent(relative).path
     }
     func clean() { try? FileManager.default.removeItem(at: root) }
+}
+
+/// A compiled, test-owned process: no shell, installed manager or receipt dependency.
+private struct NativeProcessFixture: Sendable {
+    let executable: URL
+    var started: URL { URL(fileURLWithPath: executable.path + ".started") }
+    var command: InventoryCommand { .managerVersion(executable: executable.path) }
+    init(_ box: Sandbox, slow: Bool = false) throws {
+        let directory = box.root.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        executable = directory.appendingPathComponent("nix")
+        let source = directory.appendingPathComponent("fixture.c")
+        try #"""
+        #include <stdio.h>
+        #include <unistd.h>
+        #include <limits.h>
+        int main(int argc, char **argv) {
+            char marker[PATH_MAX], pending[PATH_MAX];
+            snprintf(marker, sizeof(marker), "%s.started", argv[0]);
+            snprintf(pending, sizeof(pending), "%s.starting", argv[0]);
+            FILE *file = fopen(pending, "w");
+            if (!file) return 2;
+            fprintf(file, "%ld", (long)getpid()); fclose(file);
+            rename(pending, marker);
+            if (FIXTURE_SLOW) sleep(30);
+            return write(STDOUT_FILENO, "fixture\n", 8) == 8 ? 0 : 3;
+        }
+        """#.write(to: source, atomically: true, encoding: .utf8)
+        let compiler = Process()
+        compiler.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
+        compiler.arguments = [source.path, "-DFIXTURE_SLOW=" + (slow ? "1" : "0"), "-o", executable.path]
+        try compiler.run(); compiler.waitUntilExit()
+        guard compiler.terminationStatus == 0 else { throw ScanError.process("Could not compile the isolated process fixture") }
+    }
+    func requireStoppedIfStarted() async throws {
+        guard FileManager.default.fileExists(atPath: started.path) else { return }
+        let pid = try #require(Int32(String(contentsOf: started, encoding: .utf8)))
+        // Signal zero only observes this fixture PID; it does not send a signal.
+        for _ in 0..<100 {
+            if Darwin.kill(pid, 0) == -1 && errno == ESRCH { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("The test-created child must be gone after timeout/cancellation")
+    }
 }
 
 struct StubRunner: CommandRunning {
@@ -415,14 +460,57 @@ struct InfrastructureTests {
             #expect(!arguments.contains { ["uninstall", "install", "update", "upgrade", "remove", "sudo"].contains($0) })
         }
     }
-    @Test func processOutputLimitAndTimeoutAreEnforced() async {
-        await #expect(throws: (any Error).self) { try await ProcessRunner(outputLimit: 1).run(.receipts) }
-        await #expect(throws: (any Error).self) { try await ProcessRunner(timeout: .zero).run(.receipts) }
+    @Test func processOutputLimitAndTimeoutAreEnforced() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box)
+        for timeout: Duration in [.zero, .seconds(-1), .nanoseconds(1)] {
+            do { _ = try await ProcessRunner(timeout: timeout).run(fixture.command); Issue.record("Expired timeout succeeded") }
+            catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.started.path))
+        #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+        do { _ = try await ProcessRunner(outputLimit: 1).run(fixture.command); Issue.record("Output limit succeeded") }
+        catch ScanError.limit {} catch { Issue.record("Expected ScanError.limit, got \(error)") }
+        let slow = try NativeProcessFixture(box, slow: true)
+        do { _ = try await ProcessRunner(timeout: .milliseconds(100)).run(slow.command); Issue.record("Slow fixture exceeded deadline") }
+        catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+        try await slow.requireStoppedIfStarted()
     }
-    @Test func canceledProcessDoesNotContinue() async {
-        let task = Task { try await ProcessRunner().run(.receipts) }
+    @Test func canceledProcessDoesNotContinue() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box, slow: true)
+        let task = Task { try await ProcessRunner().run(fixture.command) }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
+        try await fixture.requireStoppedIfStarted()
+    }
+    @Test func processTimeoutIsDeterministicUnderConcurrency() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<64 {
+                group.addTask { () async throws -> Void in
+                    for timeout: Duration in [.zero, .seconds(-1), .nanoseconds(1)] {
+                        do { _ = try await ProcessRunner(timeout: timeout).run(fixture.command); Issue.record("Concurrent expired timeout succeeded") }
+                        catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+                    }
+                    #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
+    @Test func cancelingStartedFixtureStopsChild() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box, slow: true)
+        let task = Task { try await ProcessRunner().run(fixture.command) }
+        for _ in 0..<500 where !FileManager.default.fileExists(atPath: fixture.started.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        task.cancel()
+        #expect(FileManager.default.fileExists(atPath: fixture.started.path))
+        await #expect(throws: CancellationError.self) { try await task.value }
+        try await fixture.requireStoppedIfStarted()
     }
     @Test func canceledScanReportsCancellationAndKeepsOldData() async {
         let old = SoftwareItem(name: "Old", source: .nix, path: "/nix/store/old")

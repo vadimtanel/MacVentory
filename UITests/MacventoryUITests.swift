@@ -1,11 +1,46 @@
 import XCTest
 
 @MainActor
+private func requireFixtureSidebar(_ app: XCUIApplication) throws {
+    let sidebar = app.descendants(matching: .any).matching(identifier: "inventory.sidebar").firstMatch
+    if !sidebar.exists {
+        XCTContext.runActivity(named: "Fixture startup found a restored hidden sidebar") { activity in
+            let evidence = XCTAttachment(string: app.debugDescription)
+            evidence.lifetime = .keepAlways
+            activity.add(evidence)
+        }
+        let show = app.buttons["Show Sidebar"]
+        _ = try XCTUnwrap(show.waitForExistence(timeout: 5) && show.isEnabled ? show : nil,
+                          "Restore only this fixture's sidebar through its native control")
+        let coordinate = show.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let point = coordinate.screenPoint
+        _ = try XCTUnwrap(app.state == .runningForeground && show.frame.width > 0 && show.frame.height > 0 &&
+            point.x.isFinite && point.y.isFinite && show.frame.contains(point) &&
+            app.windows.firstMatch.frame.contains(show.frame) ? show : nil,
+            "The native sidebar control must be inside this foreground fixture window")
+        coordinate.click()
+    }
+    _ = try XCTUnwrap(sidebar.waitForExistence(timeout: 5) && app.buttons["inventory.settings"].exists ? sidebar : nil,
+                      "Each fixture launch must establish a visible sidebar and Settings independently")
+}
+
+@MainActor
+private func launchSyntheticApp(arguments: [String]) throws -> XCUIApplication {
+    let app = XCUIApplication()
+    _ = try XCTUnwrap(arguments.contains("--ui-testing") ? app : nil, "GUI tests require synthetic inventory and removal")
+    app.launchArguments = arguments
+    app.launch()
+    app.activate()
+    _ = try XCTUnwrap(app.windows.firstMatch.waitForExistence(timeout: 10) ? app : nil)
+    XCTAssertEqual(app.state, .runningForeground)
+    try requireFixtureSidebar(app)
+    return app
+}
+
+@MainActor
 final class MacventoryUITests: XCTestCase {
     func testInstallationHealthOrphanPreviewAndSimulatedResult() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--qa-health-scenarios"]
-        app.launch()
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-health-scenarios"])
         let table = inventoryTable(app)
         XCTAssertTrue(table.buttons["Status"].exists)
         let sidebar = app.descendants(matching: .any).matching(identifier: "inventory.sidebar").firstMatch
@@ -38,9 +73,7 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testExplicitExecutionLevelsAndInteractiveVerification() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--qa-execution-levels"]
-        app.launch()
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"])
         func preview(_ name: String, level: String, enabled: Bool) throws {
             let search = app.searchFields.firstMatch
             try clickVisible(search)
@@ -195,9 +228,14 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testDetailsActionsStayVisibleAcrossLayoutsAndLongMetadata() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--qa-health-scenarios"]
-        app.launch()
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-health-scenarios"])
+        defer {
+            // Cleanup records failures, but startup normalization also covers an
+            // early abort with a sheet still open or a process that did not exit here.
+            if app.state == .runningForeground && !app.sheets.firstMatch.exists {
+                try? requireFixtureSidebar(app)
+            }
+        }
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         // Resize only this fixture window using a real native mouse drag.
@@ -425,11 +463,9 @@ final class MacventoryUITests: XCTestCase {
                        "The sheet must close before reopening settings or opening About")
     }
 
-    private func launch(headerSorting: Bool = false) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing"]
-        if headerSorting { app.launchArguments.append("--ui-testing-header-sorts") }
-        app.launch()
+    private func launch(headerSorting: Bool = false) throws -> XCUIApplication {
+        let arguments = ["--ui-testing"] + (headerSorting ? ["--ui-testing-header-sorts"] : [])
+        let app = try launchSyntheticApp(arguments: arguments)
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
         // Actual rendered controls must remain inside the native content window.
@@ -440,8 +476,8 @@ final class MacventoryUITests: XCTestCase {
         }
         return app
     }
-    func testStartupSidebarSelectionAndDetails() {
-        let app = launch()
+    func testStartupSidebarSelectionAndDetails() throws {
+        let app = try launch()
         XCTAssertTrue(app.staticTexts["All Software"].exists)
         XCTAssertTrue(app.staticTexts["Homebrew Formulae"].firstMatch.exists)
         let row = inventoryTable(app).staticTexts["Example App"].firstMatch
@@ -450,8 +486,8 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copy Identifier"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["org.example.app"].exists)
     }
-    func testSearchAndEmptyState() {
-        let app = launch()
+    func testSearchAndEmptyState() throws {
+        let app = try launch()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 3))
         search.click(); search.typeText("does-not-exist")
@@ -460,8 +496,8 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertEqual(search.value as? String, "")
         XCTAssertTrue(inventoryTable(app).staticTexts["Example App"].firstMatch.waitForExistence(timeout: 3))
     }
-    func testRefreshCancelAndFilters() {
-        let app = launch()
+    func testRefreshCancelAndFilters() throws {
+        let app = try launch()
         app.buttons["inventory.filters"].click()
         XCTAssertTrue(app.checkBoxes["Missing metadata"].exists)
         app.buttons["inventory.refresh"].click()
@@ -470,7 +506,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
     }
     func testKeyboardRefreshAndSettings() throws {
-        let app = launch()
+        let app = try launch()
         app.typeKey("r", modifierFlags: .command)
         XCTAssertTrue(app.buttons["inventory.cancel"].waitForExistence(timeout: 1))
         XCTAssertTrue(app.buttons["inventory.refresh"].waitForExistence(timeout: 12))
@@ -479,7 +515,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.popUpButtons.firstMatch.exists)
     }
     func testUninstallConfirmationSimulationAndCancel() throws {
-        let app = launch()
+        let app = try launch()
         inventoryTable(app).staticTexts["Example App"].firstMatch.click()
         app.buttons["inventory.uninstall"].click()
         let confirm = app.buttons["management.confirm"]
@@ -511,7 +547,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertFalse(app.sheets.firstMatch.exists)
     }
     func testNativeRowPrimaryActionAndProtectedPreview() throws {
-        let app = launch()
+        let app = try launch()
         let row = inventoryTable(app).staticTexts["Example App"].firstMatch
         row.click()
         XCTAssertFalse(app.buttons["management.confirm"].exists)
@@ -549,8 +585,8 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertFalse(confirm.isEnabled)
     }
 
-    func testRunningContextForceQuitOnlyHasSingleOKAndReopens() {
-        let app = launch()
+    func testRunningContextForceQuitOnlyHasSingleOKAndReopens() throws {
+        let app = try launch()
         let row = inventoryTable(app).staticTexts["Running Example"].firstMatch
         row.rightClick()
         XCTAssertTrue(app.menuItems["Force Quit"].exists)
@@ -570,8 +606,8 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertFalse(app.buttons["management.confirm"].isEnabled)
     }
 
-    func testLeftoverCleanupRemovesOnlyResolvedSyntheticGroupAndRestoresInteraction() {
-        let app = launch()
+    func testLeftoverCleanupRemovesOnlyResolvedSyntheticGroupAndRestoresInteraction() throws {
+        let app = try launch()
         app.staticTexts["Leftover Data"].firstMatch.click()
         let retired = app.staticTexts["Retired Studio"].firstMatch
         XCTAssertTrue(retired.waitForExistence(timeout: 5))
@@ -595,8 +631,8 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(inventoryTable(app).staticTexts["Example App"].firstMatch.exists)
     }
 
-    func testLeftoverFooterSettingsOpensAndReturnsToSamePage() {
-        let app = launch()
+    func testLeftoverFooterSettingsOpensAndReturnsToSamePage() throws {
+        let app = try launch()
         app.staticTexts["Leftover Data"].firstMatch.click()
         XCTAssertTrue(app.textFields["leftovers.search"].waitForExistence(timeout: 5))
         app.buttons["Settings"].firstMatch.click()
@@ -607,7 +643,7 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testColumnVisibilityMenu() throws {
-        let app = launch()
+        let app = try launch()
         if #available(macOS 14, *) {
             XCTAssertTrue(inventoryTable(app).buttons["Version"].exists)
             try clickVisible(app.buttons["inventory.columns"])
@@ -619,7 +655,7 @@ final class MacventoryUITests: XCTestCase {
         }
     }
     func testAllNativeHeaderSortsPreserveSelection() throws {
-        let app = launch(headerSorting: true)
+        let app = try launch(headerSorting: true)
         let table = inventoryTable(app)
         recordHeaderState(app, phase: "before selection")
         table.staticTexts["Example App"].firstMatch.click()
@@ -664,7 +700,7 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testSettingsPagesThresholdInputAndAboutLinks() throws {
-        let app = launch()
+        let app = try launch()
         try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let days = app.textFields["Recently installed threshold"]
@@ -689,7 +725,7 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testCancelDiscardsDraftAcrossPages() throws {
-        let app = launch()
+        let app = try launch()
         try clickVisible(app.buttons["inventory.settings"])
         app.radioButtons["Discovery"].click()
         let field = app.textFields["Recently installed threshold"]
@@ -712,9 +748,7 @@ final class MacventoryUITests: XCTestCase {
 @MainActor
 final class MacventoryHeaderPointerDiagnostics: XCTestCase {
     func testSourceHeaderRealPointerBothDirectionsPreservesIdentity() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--ui-testing-header-sorts"]
-        app.launch()
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--ui-testing-header-sorts"])
         app.activate()
         let window = app.windows.firstMatch
         _ = try XCTUnwrap(window.waitForExistence(timeout: 10) ? window : nil)
