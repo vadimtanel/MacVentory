@@ -89,7 +89,8 @@ private struct ProbeTable: View {
     }
 }
 @MainActor private func findTable(_ view: NSView) -> NSTableView? {
-    if let table = view as? NSTableView, table.numberOfColumns == 6 { return table }
+    if let table = view as? NSTableView,
+       Set(["Name", "Version", "Source", "Size", "Installed", "Last Opened"]).isSubset(of: Set(table.tableColumns.map(\.title))) { return table }
     return view.subviews.lazy.compactMap(findTable).first
 }
 @main private struct HeaderProxyProbe {
@@ -115,12 +116,16 @@ private struct ProbeTable: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { runPhase(phase) }
         }
         @MainActor func runPhase(_ phase: Int) {
-            guard let content = window.contentView, let table = findTable(content), let header = table.headerView else { print("ERROR no six-column native table"); exit(3) }
+            guard let content = window.contentView, let table = findTable(content), let header = table.headerView else { print("ERROR no expected native inventory table"); exit(3) }
+            let expectedTitles = modeName == "inventory" ? ["Name", "Status", "Version", "Source", "Size", "Installed", "Last Opened"] : ["Name", "Version", "Source", "Size", "Installed", "Last Opened"]
+            guard table.tableColumns.map(\.title) == expectedTitles,
+                  let versionIndex = expectedTitles.firstIndex(of: "Version"),
+                  let sourceIndex = expectedTitles.firstIndex(of: "Source") else { print("ERROR unexpected native columns"); exit(4) }
             let phaseNames = ["before selection", "after selection", "Version ascending", "Version descending", "Source ascending", "Source descending"]
             print("PHASE \(phaseNames[phase]) selectedRow=\(table.selectedRow) selection=\(String(describing: state.selection)) customSort=\(state.customSort) nativeSort=\(table.sortDescriptors)")
             let children = header.accessibilityChildren() ?? []
-            guard children.count == 6 else { print("ERROR missing native header proxies"); exit(4) }
-            for index in 0..<6 {
+            guard children.count == expectedTitles.count else { print("ERROR missing native header proxies"); exit(4) }
+            for index in expectedTitles.indices {
                 let proxy = children[index] as! NSObject
                 let rect = header.headerRect(ofColumn: index)
                 let point = window.convertPoint(toScreen: header.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil))
@@ -155,7 +160,7 @@ private struct ProbeTable: View {
                 if let json = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]), let line = String(data: json, encoding: .utf8) { print(line) }
             }
             if phase >= 4 {
-                let source = children[2] as! NSObject
+                let source = children[sourceIndex] as! NSObject
                 let expectedDirection = phase == 4 ? "AXAscendingSortDirection" : "AXDescendingSortDirection"
                 let expectedRow = phase == 4 ? 0 : 1
                 guard source.accessibilityAttributeValue(.sortDirection) as? String == expectedDirection,
@@ -166,8 +171,8 @@ private struct ProbeTable: View {
             }
             switch phase {
             case 0: table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-            case 1, 2: (children[1] as! NSObject).accessibilityPerformAction(.press)
-            case 3, 4: (children[2] as! NSObject).accessibilityPerformAction(.press)
+            case 1, 2: (children[versionIndex] as! NSObject).accessibilityPerformAction(.press)
+            case 3, 4: (children[sourceIndex] as! NSObject).accessibilityPerformAction(.press)
             default: exit(0)
             }
             schedule(phase + 1)

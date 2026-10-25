@@ -9,9 +9,9 @@ final class MacventoryUITests: XCTestCase {
         let table = inventoryTable(app)
         XCTAssertTrue(table.buttons["Status"].exists)
         let sidebar = app.descendants(matching: .any).matching(identifier: "inventory.sidebar").firstMatch
-        let attention = sidebar.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Attention Required")).firstMatch
+        let attention = sidebar.staticTexts.matching(NSPredicate(format: "value == %@ OR label == %@", "Attention Required", "Attention Required")).firstMatch
         try clickVisible(attention)
-        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: "macventory").firstMatch
+        let row = table.staticTexts["macventory"].firstMatch
         try clickVisible(row)
         let uninstallButton = app.buttons["inventory.uninstall"]
         try clickVisible(uninstallButton)
@@ -21,7 +21,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertEqual(uninstall.label, "Remove Orphaned Installation")
         XCTAssertTrue(uninstall.isEnabled)
         XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled)
-        try clickVisible(uninstall)
+        try selectUninstall(in: app)
         try clickVisible(sheet.checkBoxes["management.acknowledge"])
         try clickVisible(sheet.buttons["management.confirm"])
         XCTAssertTrue(sheet.staticTexts.containing(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "No application, process or data was changed", "No application, process or data was changed")).firstMatch.waitForExistence(timeout: 5))
@@ -36,13 +36,17 @@ final class MacventoryUITests: XCTestCase {
         app.launch()
         let table = inventoryTable(app)
         func preview(_ name: String, level: String, enabled: Bool) throws {
-            let row = table.children(matching: .outlineRow).containing(.staticText, identifier: name).firstMatch
+            let search = app.searchFields.firstMatch
+            try clickVisible(search)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText(name)
+            let row = table.staticTexts[name].firstMatch
             try clickVisible(row)
             try clickVisible(app.buttons["inventory.uninstall"])
             let sheet = app.sheets.firstMatch
             XCTAssertTrue(sheet.waitForExistence(timeout: 5))
             let badge = sheet.descendants(matching: .any).matching(identifier: "uninstall.level").firstMatch
-            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", level), object: badge)
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@", level, level), object: badge)
             XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
             XCTAssertEqual(sheet.checkBoxes["management.uninstall"].isEnabled, enabled)
         }
@@ -50,7 +54,7 @@ final class MacventoryUITests: XCTestCase {
         try clickVisible(app.sheets.buttons["management.cancel"])
         try preview("Interactive Vendor Example", level: "Interactive Uninstall", enabled: true)
         let sheet = app.sheets.firstMatch
-        try clickVisible(sheet.checkBoxes["management.uninstall"])
+        try selectUninstall(in: app)
         XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled)
         try clickVisible(sheet.checkBoxes["management.acknowledge"])
         try clickVisible(sheet.buttons["management.confirm"])
@@ -79,6 +83,27 @@ final class MacventoryUITests: XCTestCase {
         _ = try XCTUnwrap(result == .completed ? target : nil,
                           "The actual control must be hittable; no coordinate fallback", file: file, line: line)
         target.click()
+    }
+
+    private func selectUninstall(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) throws {
+        let sheet = app.sheets.firstMatch
+        let toggle = sheet.checkBoxes["management.uninstall"]
+        _ = try XCTUnwrap(toggle.waitForExistence(timeout: 5) && toggle.isEnabled ? toggle : nil,
+                          "An executable uninstall must be available", file: file, line: line)
+        let scroll = sheet.scrollViews.firstMatch
+        for _ in 0..<6 {
+            if toggle.isHittable && scroll.frame.contains(toggle.frame) { break }
+            scroll.scroll(byDeltaX: 0, deltaY: -150)
+        }
+        _ = try XCTUnwrap(scroll.frame.contains(toggle.frame) ? toggle : nil,
+                          "Scroll the real uninstall control into the review viewport", file: file, line: line)
+        try clickVisible(toggle, file: file, line: line)
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1 OR value == %@", "1"), object: toggle)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [selected], timeout: 5) == .completed ? toggle : nil,
+                          "The uninstall control must actually become selected", file: file, line: line)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: sheet.checkBoxes["management.acknowledge"])
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [ready], timeout: 5) == .completed ? toggle : nil,
+                          "Acknowledgement becomes available only after selection", file: file, line: line)
     }
 
     private func recordHeaderState(_ app: XCUIApplication, phase: String) {
@@ -135,6 +160,14 @@ final class MacventoryUITests: XCTestCase {
         let nestedScroll = table.scrollViews.firstMatch
         let viewport = nestedScroll.exists ? nestedScroll : app.scrollViews.containing(.any, identifier: "inventory.table").firstMatch
         _ = try XCTUnwrap(viewport.exists ? viewport : nil, "Resolve the actual table viewport", file: file, line: line)
+        // The seventh Status column can put Last Opened beyond a compact window.
+        // Scroll the real table before checking geometry or sending a pointer click.
+        for _ in 0..<4 {
+            if window.frame.contains(header.frame) && viewport.frame.contains(header.frame) { break }
+            let bounds = viewport.frame.intersection(window.frame)
+            let delta = header.frame.maxX > bounds.maxX ? bounds.maxX - header.frame.maxX - 24 : bounds.minX - header.frame.minX + 24
+            viewport.scroll(byDeltaX: delta, deltaY: 0)
+        }
         let frame = header.frame
         let bounds = [window.frame, table.frame, viewport.frame]
         let coordinate = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -260,7 +293,7 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertTrue(app.checkBoxes["Show system applications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.popUpButtons.firstMatch.exists)
     }
-    func testUninstallConfirmationSimulationAndCancel() {
+    func testUninstallConfirmationSimulationAndCancel() throws {
         let app = launch()
         inventoryTable(app).staticTexts["Example App"].firstMatch.click()
         app.buttons["inventory.uninstall"].click()
@@ -274,8 +307,8 @@ final class MacventoryUITests: XCTestCase {
         let uninstall = app.checkBoxes["management.uninstall"]
         expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: uninstall)
         waitForExpectations(timeout: 10)
-        uninstall.click()
-        app.checkBoxes["management.acknowledge"].click()
+        try selectUninstall(in: app)
+        try clickVisible(app.checkBoxes["management.acknowledge"])
         XCTAssertTrue(confirm.isEnabled)
         confirm.click()
         XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 5))
@@ -304,8 +337,8 @@ final class MacventoryUITests: XCTestCase {
         let uninstall = app.checkBoxes["management.uninstall"]
         expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: uninstall)
         waitForExpectations(timeout: 10)
-        uninstall.click()
-        app.checkBoxes["management.acknowledge"].click()
+        try selectUninstall(in: app)
+        try clickVisible(app.checkBoxes["management.acknowledge"])
         XCTAssertTrue(confirm.isEnabled)
         app.buttons["Cancel"].firstMatch.click()
         row.doubleClick()
