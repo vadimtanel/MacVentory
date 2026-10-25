@@ -31,8 +31,9 @@ public protocol InteractiveRemovalOpening: Sendable {
 public struct NativeInteractiveRemovalOpening: InteractiveRemovalOpening {
     public init() {}
     @MainActor public func open(application: String, url: URL) async throws {
-        let config = NSWorkspace.OpenConfiguration(); config.activates = true
-        _ = try await NSWorkspace.shared.open([url], withApplicationAt: URL(fileURLWithPath: application), configuration: config)
+        let config = ExactApplicationLaunch.configuration()
+        let opened = try await NSWorkspace.shared.open([url], withApplicationAt: URL(fileURLWithPath: application), configuration: config)
+        guard opened.bundleURL.map({ FileSystem.canonical($0.path) }) == application else { throw ScanError.process("Steam launch returned another physical installation; outcome unknown") }
     }
 }
 public struct SteamRemovalAdapter: UninstallExecuting {
@@ -55,6 +56,7 @@ public struct SteamRemovalAdapter: UninstallExecuting {
         for value in folders.values {
             if let path = value.object?["path"]?.text ?? value.text, path.hasPrefix("/") { libraries.insert(FileSystem.canonical(path)) }
         }
+        guard libraries.count <= 128 else { throw ScanError.limit("Too many Steam libraries for targeted review") }
         guard libraries.contains(library) else { throw ScanError.process("The selected Steam library is no longer registered") }
         var matches: [String] = []
         for candidate in libraries {
@@ -66,7 +68,7 @@ public struct SteamRemovalAdapter: UninstallExecuting {
         let application = try client.clientPath(), appFingerprint = try client.fingerprint(application)
         // Valve's documented Steam Browser Protocol. Only a numeric ID can enter this URI.
         let url = URL(string: "steam://uninstall/" + id)!
-        let fingerprint = RemovalIdentity.digest(try Data(contentsOf: URL(fileURLWithPath: manifest)) + Data(contentsOf: URL(fileURLWithPath: index)) + Data((payload + "|" + appFingerprint).utf8))
+        let fingerprint = RemovalIdentity.digest(try Data(contentsOf: URL(fileURLWithPath: manifest)) + Data(contentsOf: URL(fileURLWithPath: index)) + Data((payload + "|" + appFingerprint + "|" + (try RemovalIdentity.artifactFingerprint([manifest, index, payload]))).utf8))
         return .init(application: application, url: url, manifest: manifest, appID: id, payload: payload, fingerprint: fingerprint, preparedAt: Date())
     }
     public func validate(_ plan: UninstallPlan) throws {
@@ -88,6 +90,19 @@ public struct SteamRemovalAdapter: UninstallExecuting {
         if manifest.presence == .missing && payload.presence == .missing {
             guard let root = plan.item.attributes["Steam root"], let folders = try? KeyValues.parse(FileSystem.text(root + "/steamapps/libraryfolders.vdf"))["libraryfolders"]?.object else { return .unknownResult }
             if folders.values.contains(where: { $0.object?["apps"]?.object?[proof.appID] != nil }) { return .partialRemoval }
+            var libraries = Set([root])
+            for value in folders.values {
+                if let path = value.object?["path"]?.text ?? value.text, path.hasPrefix("/") { libraries.insert(FileSystem.canonical(path)) }
+            }
+            guard libraries.count <= 128 else { return .unknownResult }
+            for library in libraries {
+                guard ArtifactObservation.inspect(library).presence == .present else { return .unknownResult }
+                switch ArtifactObservation.inspect(library + "/steamapps/appmanifest_" + proof.appID + ".acf").presence {
+                case .present, .brokenLink: return .partialRemoval
+                case .inaccessible: return .unknownResult
+                case .missing: break
+                }
+            }
             return .verifiedRemoved
         }
         if manifest.presence == .missing || payload.presence == .missing { return .partialRemoval }

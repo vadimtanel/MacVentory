@@ -14,7 +14,7 @@ public protocol ManagedRemovalSecurity: Sendable {
 }
 public enum RemovalIdentity {
     public static func portName(_ value: String) -> Bool {
-        let reserved: Set<String> = ["all", "active", "inactive", "installed", "uninstalled", "outdated", "obsolete", "requested", "unrequested", "leaves", "rleaves", "current"]
+        let reserved: Set<String> = ["all", "active", "inactive", "installed", "uninstalled", "outdated", "obsolete", "requested", "unrequested", "leaves", "rleaves", "current", "and", "or", "not", "xor"]
         return token(value) && !reserved.contains(value)
     }
     public static func token(_ value: String) -> Bool {
@@ -29,6 +29,22 @@ public enum RemovalIdentity {
     public static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     public static func canonicalJSON(_ data: Data) throws -> Data {
         try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: data), options: [.sortedKeys])
+    }
+    /// Binds registered path contents to the preview, including missing-to-present changes.
+    public static func artifactFingerprint(_ paths: [String]) throws -> String {
+        var result = Data()
+        for path in Set(paths).sorted() {
+            let observation = ArtifactObservation.inspect(path)
+            guard observation.presence != .inaccessible else { throw ScanError.permission }
+            result.append(Data((path + "|" + observation.presence.rawValue + "|" + FileSystem.canonical(path)).utf8))
+            if observation.presence != .missing {
+                var value = stat()
+                guard lstat(path, &value) == 0 else { throw ScanError.process("Payload changed during review") }
+                result.append(Data("|\(value.st_dev)|\(value.st_ino)|\(value.st_mode)|\(value.st_uid)|\(value.st_gid)|\(value.st_size)|\(value.st_mtimespec.tv_sec)|\(value.st_mtimespec.tv_nsec)|\(value.st_ctimespec.tv_sec)|\(value.st_ctimespec.tv_nsec)".utf8))
+                if value.st_mode & S_IFMT == S_IFLNK { result.append(Data(try FileManager.default.destinationOfSymbolicLink(atPath: path).utf8)) }
+            }
+        }
+        return digest(result)
     }
     public static func executableDigest(_ path: String) throws -> String {
         let canonical = FileSystem.canonical(path), attributes = try FileManager.default.attributesOfItem(atPath: canonical)
@@ -51,12 +67,11 @@ public struct LiveManagedRemovalSecurity: ManagedRemovalSecurity {
             guard URL(fileURLWithPath: resolved).lastPathComponent == "nix", resolved.hasPrefix("/nix/store/"), resolved.contains("/bin/nix") else { throw ScanError.process("Nix must resolve to its root-owned installed store executable") }
         default: throw ScanError.process("Unsupported manager")
         }
+        var anchors = ""
         if source == .macPorts {
-            for anchor in ["/opt/local/etc/macports/macports.conf", "/opt/local/share/macports/Tcl/macports1.0/macports.tcl"] {
-                let a = try FileManager.default.attributesOfItem(atPath: anchor)
-                guard FileSystem.canonical(anchor) == anchor, a[.type] as? FileAttributeType == .typeRegular,
-                      (a[.ownerAccountID] as? NSNumber)?.uint32Value == 0,
-                      ((a[.posixPermissions] as? NSNumber)?.intValue ?? 0o777) & 0o022 == 0 else { throw ScanError.process("MacPorts configuration/library ownership is unsafe") }
+            for anchor in ["/opt/local/etc/macports/macports.conf", "/opt/local/share/macports/Tcl/macports1.0/macports.tcl", "/opt/local/var/macports/registry"] {
+                try Self.validateRootOwnedPath(anchor)
+                if !anchor.hasSuffix("/registry") { anchors += try RemovalIdentity.executableDigest(anchor) }
             }
         }
         guard FileManager.default.isExecutableFile(atPath: resolved) else { throw ScanError.process("Manager executable is missing") }
@@ -65,10 +80,31 @@ public struct LiveManagedRemovalSecurity: ManagedRemovalSecurity {
             let a = try FileManager.default.attributesOfItem(atPath: path)
             let owner = (a[.ownerAccountID] as? NSNumber)?.uint32Value ?? UInt32.max
             let mode = (a[.posixPermissions] as? NSNumber)?.intValue ?? 0o777
-            guard Self.permitsOwnership(path: path, source: source, owner: owner, mode: mode, group: a[.groupOwnerAccountName] as? String) else { throw ScanError.process("Manager installation has unsafe ownership or writable components") }
+            guard (source != .macPorts || !Self.hasExtendedACL(path)), Self.permitsOwnership(path: path, source: source, owner: owner, mode: mode, group: a[.groupOwnerAccountName] as? String) else { throw ScanError.process("Manager installation has unsafe ownership or writable components") }
             path = (path as NSString).deletingLastPathComponent
         }
-        return try RemovalIdentity.executableDigest(executable)
+        return try RemovalIdentity.executableDigest(executable) + anchors
+    }
+    static func validateRootOwnedPath(_ target: String) throws {
+        guard target == FileSystem.canonical(target) else { throw ScanError.process("MacPorts trusted path is linked") }
+        var current = target
+        while current != "/" {
+            let attributes = try FileManager.default.attributesOfItem(atPath: current)
+            guard !hasExtendedACL(current), permitsOwnership(path: current, source: .macPorts, owner: (attributes[.ownerAccountID] as? NSNumber)?.uint32Value ?? UInt32.max, mode: (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0o777, group: nil) else { throw ScanError.process("MacPorts configuration, library or registry ancestor is writable or not root-owned") }
+            current = (current as NSString).deletingLastPathComponent
+        }
+    }
+    static func hasExtendedACL(_ path: String) -> Bool {
+        guard let list = acl_get_file(path, ACL_TYPE_EXTENDED) else {
+            // Darwin also uses ENOENT when an existing object has no extended ACL.
+            guard errno == ENOENT else { return true }
+            var value = stat()
+            return lstat(path, &value) != 0
+        }
+        defer { acl_free(UnsafeMutableRawPointer(list)) }
+        var entry: acl_entry_t?
+        if acl_get_entry(list, ACL_FIRST_ENTRY.rawValue, &entry) == 0 { return true }
+        return errno != EINVAL // Darwin reports an empty, valid ACL as EINVAL.
     }
     public static func permitsOwnership(path: String, source: InstallSource, owner: UInt32, mode: Int, group: String?) -> Bool {
         guard owner == 0 || (source == .nix && owner == getuid()), mode & 0o002 == 0 else { return false }
@@ -135,7 +171,8 @@ public struct ManagedRemovalAdapter: UninstallExecuting {
             let artifacts = apps.isEmpty ? paths.filter { (try? FileManager.default.attributesOfItem(atPath: $0)[.type] as? FileAttributeType) != .typeDirectory }.prefix(64).map(ArtifactObservation.inspect) : apps.sorted().map(ArtifactObservation.inspect)
             guard !ProtectionPolicy.isRunningCopy(artifacts.map(\.path)), !artifacts.contains(where: { [.brokenLink, .inaccessible].contains($0.presence) }) else { throw ScanError.process("Owned artifacts are linked, inaccessible or include the running Macventory copy") }
             let authorization = try security.requiresAuthorization(prefix: prefix)
-            let state = RemovalIdentity.digest(installed + data + Data((name + "|" + version + "|" + executableFingerprint).utf8))
+            let payloadIdentity = try RemovalIdentity.artifactFingerprint(paths)
+            let state = RemovalIdentity.digest(installed + data + Data((name + "|" + version + "|" + executableFingerprint + "|" + payloadIdentity).utf8))
             return ManagedRemovalEvidence(target: .macPorts(name: name, version: version, prefix: prefix), itemID: item.id, executable: executable, executableFingerprint: executableFingerprint, stateFingerprint: state, artifacts: artifacts, registryIdentities: records.map(\.id).sorted(), requiresAuthorization: authorization, preparedAt: Date())
         }
         guard let profile = item.attributes["Nix profile"], item.attributes["Nix profile mode"] == "modern-mutable", let element = item.packageID, RemovalIdentity.nixElement(element) else { throw ScanError.process("Exact named mutable profile evidence is unavailable; legacy/declarative profiles require their own workflow") }

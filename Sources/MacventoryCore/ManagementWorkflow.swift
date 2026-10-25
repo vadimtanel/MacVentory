@@ -17,6 +17,20 @@ public struct ManagementResult: Sendable {
     public var steps: [ManagementStepResult]
     public var simulated: Bool
     public init(steps: [ManagementStepResult], simulated: Bool) { self.steps = steps; self.simulated = simulated }
+    public var canVerifyInteractiveRemoval: Bool {
+        steps.contains { $0.operation == .uninstall && [.waitingForUser, .partial, .unknown].contains($0.status) }
+    }
+    public func verifyingInteractiveRemoval(_ outcome: UninstallOutcome) -> ManagementResult {
+        guard canVerifyInteractiveRemoval else { return self }
+        let status: ManagementStepStatus
+        switch outcome {
+        case .verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved: status = .completed
+        case .waitingForUser: status = .waitingForUser
+        case .partialRemoval: status = .partial
+        default: status = .unknown
+        }
+        return .init(steps: steps.map { $0.operation == .uninstall ? .init(.uninstall, status, outcome.completionMessage) : $0 }, simulated: simulated)
+    }
     public var title: String {
         let items = steps.flatMap(\.cleanupResults)
         if steps.count == 1, !items.isEmpty, items.allSatisfy({ $0.status == .alreadyRemoved }) { return "Already Removed" }

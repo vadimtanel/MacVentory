@@ -5,12 +5,13 @@ import MacventoryCore
 /// A deliberately narrow privileged service. It has no arbitrary-command/file/quit RPC.
 private final class Delegate: NSObject, NSXPCListenerDelegate {
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard let client = Self.verifiedClient(connection.processIdentifier) else { return false }
+        guard let (client, requirement) = Self.verifiedClient(connection.processIdentifier) else { return false }
+        connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: MacPortsPrivilegedXPC.self)
         connection.exportedObject = Service(clientBundle: client)
         connection.resume(); return true
     }
-    private static func verifiedClient(_ pid: pid_t) -> String? {
+    private static func verifiedClient(_ pid: pid_t) -> (String, String)? {
         var ownCode: SecCode?, ownStatic: SecStaticCode?, ownInfo: CFDictionary?
         guard SecCodeCopySelf([], &ownCode) == errSecSuccess, let ownCode,
               SecCodeCopyStaticCode(ownCode, [], &ownStatic) == errSecSuccess, let ownStatic,
@@ -18,15 +19,15 @@ private final class Delegate: NSObject, NSXPCListenerDelegate {
               let team = (ownInfo as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String,
               !team.isEmpty, team.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
         var requirement: SecRequirement?, guest: SecCode?
-        let text = "anchor apple generic and identifier \"org.vadimtanel.Macventory\" and certificate leaf[subject.OU] = \"" + team + "\""
+        guard let text = try? MacPortsAuthorization.peerRequirement(identifier: "org.vadimtanel.Macventory", team: team) else { return nil }
         guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
               SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &guest) == errSecSuccess, let guest,
               SecCodeCheckValidity(guest, [], requirement) == errSecSuccess else { return nil }
         var path: CFURL?, guestStatic: SecStaticCode?
         guard SecCodeCopyStaticCode(guest, [], &guestStatic) == errSecSuccess, let guestStatic, SecCodeCopyPath(guestStatic, [], &path) == errSecSuccess, let path else { return nil }
         let raw = FileSystem.canonical((path as URL).path)
-        if raw.hasSuffix(".app") { return raw }
-        if let range = raw.range(of: ".app/") { return String(raw[..<range.lowerBound]) + ".app" }
+        if raw.hasSuffix(".app") { return (raw, text) }
+        if let range = raw.range(of: ".app/") { return (String(raw[..<range.lowerBound]) + ".app", text) }
         return nil
     }
 }
@@ -53,9 +54,12 @@ private final class Reply: @unchecked Sendable {
     func call(_ code: Int32, _ message: String) { callback(code, message) }
 }
 private actor Requests {
-    private var consumed = Set<UUID>()
+    private var consumed: [UUID: Date] = [:]
     func accept(_ request: MacPortsAuthorizedRequest) throws {
-        guard (0..<300).contains(Date().timeIntervalSince(request.createdAt)), consumed.count < 1000, consumed.insert(request.id).inserted else { throw ScanError.process("Expired or reused authorization request") }
+        let now = Date()
+        consumed = consumed.filter { (0..<300).contains(now.timeIntervalSince($0.value)) }
+        guard (0..<300).contains(now.timeIntervalSince(request.createdAt)), consumed.count < 1000, consumed[request.id] == nil else { throw ScanError.process("Expired or reused authorization request") }
+        consumed[request.id] = request.createdAt
     }
 }
 @main struct Main {

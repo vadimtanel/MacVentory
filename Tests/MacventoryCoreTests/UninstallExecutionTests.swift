@@ -270,7 +270,7 @@ struct UninstallExecutionTests {
         var item = SoftwareItem(name: "tool", kind: .package, source: .macPorts, packageID: "tool")
         item.version = "1.0_0+ssl"; item.attributes["Prefix"] = "/opt/local"; item.attributes["Manager executable"] = executable
         let proof = try await adapter.prepare(item), request = try MacPortsAuthorizedRequest(proof)
-        #expect(try await MacPortsAuthorizedOperation(adapter: adapter).execute(request, clientBundle: box.root.appendingPathComponent("Separate.app").path) == .verifiedRemoved)
+        #expect(try await MacPortsAuthorizedOperation(adapter: adapter, authorizer: FixtureAdminAuthorization(allowed: true)).execute(request, clientBundle: box.root.appendingPathComponent("Separate.app").path) == .verifiedRemoved)
         #expect(await registry.count == 1)
         #expect(!MacPortsAuthorization.isPackagedAndSigned) // Test host never qualifies for live authorization.
     }
@@ -364,6 +364,11 @@ struct UninstallExecutionTests {
         try box.write("steamapps/libraryfolders.vdf", "\"libraryfolders\" { \"0\" { \"path\" \"\(box.root.path)\" \"apps\" {} } }")
         #expect(SteamRemovalAdapter.verify(plan) == .verifiedRemoved)
         #expect(try await SteamScanner(root: box.root.path).scan().items.isEmpty)
+        let second = box.root.appendingPathComponent("MovedLibrary").path
+        try box.write("steamapps/libraryfolders.vdf", "\"libraryfolders\" { \"1\" { \"path\" \"\(second)\" } }")
+        #expect(SteamRemovalAdapter.verify(plan) == .unknownResult) // An offline library is not absence.
+        try box.write("MovedLibrary/steamapps/appmanifest_123.acf", "Retained manifest in another library")
+        #expect(SteamRemovalAdapter.verify(plan) == .partialRemoval)
     }
     @Test(arguments: InstallSource.allCases) func everySourceSelectsExplicitLevelOrSafetyOverride(source: InstallSource) async {
         let item = SoftwareItem(name: "Unverified fixture", kind: .package, source: source)
@@ -460,5 +465,40 @@ extension UninstallExecutionTests {
         let plan = await UninstallPreparationService(bundles: checker, vendors: NoVendor()).prepare(item)
         #expect(try await BundleRemovalAdapter(checker: checker, trash: effect).execute(plan) == .partialRemoval)
         #expect(FileSystem.exists(item.path!))
+    }
+}
+
+private struct FixtureAdminAuthorization: MacPortsRequestAuthorizing {
+    let allowed: Bool
+    func validate(_ form: Data) throws { if !allowed { throw ScanError.permission } }
+}
+extension UninstallExecutionTests {
+    @Test func helperDeniesMissingOrUnapprovedAuthorizationBeforeEffect() async throws {
+        let box = try Sandbox.removal(); defer { box.clean() }
+        let (registry, _, marker) = try managerFixture(box)
+        let adapter = ManagedRemovalAdapter(boundary: registry, security: FixtureManagerSecurity(executable: "/opt/local/bin/port", marker: marker))
+        var item = SoftwareItem(name: "tool", kind: .package, source: .macPorts, packageID: "tool")
+        item.version = "1.0_0+ssl"; item.attributes["Prefix"] = "/opt/local"; item.attributes["Manager executable"] = "/opt/local/bin/port"
+        let request = try MacPortsAuthorizedRequest(await adapter.prepare(item))
+        await #expect(throws: (any Error).self) { try await MacPortsAuthorizedOperation(adapter: adapter, authorizer: FixtureAdminAuthorization(allowed: false)).execute(request, clientBundle: box.root.appendingPathComponent("Separate.app").path) }
+        await #expect(throws: (any Error).self) { try await MacPortsAuthorizedOperation(adapter: adapter).execute(request, clientBundle: box.root.appendingPathComponent("Separate.app").path) }
+        #expect(await registry.count == 0)
+        #expect(throws: (any Error).self) { try MacPortsSystemAuthorizer().validate(Data(repeating: 0, count: 3)) }
+        #expect(throws: (any Error).self) { try MacPortsAuthorization.peerRequirement(identifier: "other", team: "TEAM") }
+        #expect(throws: (any Error).self) { try MacPortsAuthorization.peerRequirement(identifier: MacPortsAuthorization.serviceName, team: "TEAM\"") }
+    }
+    @Test(arguments: [false, true]) func macPortsPayloadIdentityChangesRequireNewPreview(wasMissing: Bool) async throws {
+        let box = try Sandbox.removal(); defer { box.clean() }
+        let (registry, adapter, executable) = try managerFixture(box)
+        let payload = box.root.appendingPathComponent("payload.txt").path
+        if wasMissing { try FileManager.default.removeItem(atPath: payload) }
+        let item = try #require(try await MacPortsScanner(executable: executable, runner: registry).scan().items.first { $0.packageID == "tool" })
+        let plan = await UninstallPreparationService(manager: adapter).prepare(item)
+        #expect(plan.canExecute)
+        if !wasMissing { try FileManager.default.moveItem(atPath: payload, toPath: box.root.appendingPathComponent("Original.txt").path) }
+        try box.write("payload.txt", "Replacement must never be removed by old confirmation")
+        await #expect(throws: (any Error).self) { try await adapter.execute(plan) }
+        #expect(await registry.count == 0)
+        #expect(FileSystem.exists(payload))
     }
 }

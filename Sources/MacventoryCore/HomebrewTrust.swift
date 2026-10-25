@@ -5,6 +5,9 @@ import Darwin
 /// Homebrew is an unsigned script. Only locally installed, owner-controlled standard
 /// managers are automated. Custom prefixes remain discoverable with guided recovery.
 public enum HomebrewTrust {
+    static func caskRemovalScope(executable: String, token: String, artifacts: [String]) -> [String] {
+        artifacts + [String(executable.dropLast("/bin/brew".count)) + "/Caskroom/" + token]
+    }
     public static func permitsResolution(executable: String, resolved: String) -> Bool {
         switch executable {
         case "/opt/homebrew/bin/brew": resolved == "/opt/homebrew/bin/brew"

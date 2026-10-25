@@ -42,14 +42,14 @@ struct ManagementView: View {
             if model.qaProtected { Label("Simulation only — no process, application or data will be changed.", systemImage: "shield.checkered").font(.callout).foregroundStyle(.blue) }
             if let result = model.managementResult {
                 OperationResultView(result: result)
-                if model.managementUninstallPlan?.executionLevel == .interactive {
+                if model.managementUninstallPlan?.executionLevel == .interactive && result.canVerifyInteractiveRemoval {
                     Button("Verify Removal") { model.verifyInteractiveRemoval() }.disabled(model.managementWorking).accessibilityIdentifier("management.verifyRemoval")
                 }
                 if result.steps.contains(where: { $0.operation == .uninstall && [.completed, .partial].contains($0.status) }) {
                     Button("Review Leftover Data Separately") { onReviewLeftovers() }.disabled(model.managementWorking)
                 }
                 if let message = model.managementMessage { Text(message).font(.caption).foregroundStyle(.orange) }
-                HStack { Spacer(); Button("OK") { dismiss() }.keyboardShortcut(.defaultAction).accessibilityIdentifier("management.ok").controlHelp("Close the completed review and return to the inventory") }
+                HStack { Spacer(); Button("OK") { dismiss() }.keyboardShortcut(.defaultAction).accessibilityIdentifier("management.ok").disabled(model.managementWorking).controlHelp("Close the completed review and return to the inventory") }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -58,7 +58,7 @@ struct ManagementView: View {
                         Text(item.installationHealth.explanation).font(.callout)
                         Text("Kind: " + item.kind.rawValue + " · Manager identity: " + (item.packageID ?? "not established")).font(.caption)
                         Text("Observed app: " + (item.path ?? "No application bundle verified")).font(.caption).textSelection(.enabled)
-                        ForEach(item.installationHealth.artifacts, id: \.path) { artifact in Text("Expected: " + artifact.path + " · " + artifact.presence.rawValue).font(.caption).textSelection(.enabled) }
+                        ForEach(model.managementUninstallPlan?.managerEvidence?.artifacts ?? item.installationHealth.artifacts, id: \.path) { artifact in Text("Expected: " + artifact.path + " · " + artifact.presence.rawValue).font(.caption).textSelection(.enabled) }
                         Text("Manager state: " + item.installationHealth.registration.rawValue + " · Checked " + item.installationHealth.checkedAt.formatted()).font(.caption)
                         Text("Choose the actions to review").font(.headline)
                         Toggle("Force Quit", isOn: $forceQuit).disabled(model.managementTarget == nil).accessibilityIdentifier("management.forceQuit").pointingControl(enabled: model.managementTarget != nil && !model.managementWorking)

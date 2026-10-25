@@ -10,10 +10,13 @@ private actor FixtureBrew: HomebrewRemovalOperating, CommandRunning {
     var queryFailureAfterRemoval = false
     var dependent = ""
     var cleanup: [String] = []
+    var changeUnrelated = false
     let root: String
     init(root: String, token: String = "macventory", version: String = "1.0.0") { self.root = root; registry = [token: [version]] }
-    func configure(exit: Int32 = 0, keep: Bool = false, queryFailure: Bool = false, dependent: String = "", cleanup: [String] = []) {
+    func configure(exit: Int32 = 0, keep: Bool = false, queryFailure: Bool = false, dependent: String = "", cleanup: [String] = [], changeOther: Bool = false) {
         self.exit = exit; keepRegistration = keep; queryFailureAfterRemoval = queryFailure; self.dependent = dependent; self.cleanup = cleanup
+        changeUnrelated = changeOther
+        if changeOther { registry["unrelated"] = ["2.0"] }
     }
     func installed(executable: String, cask: Bool) throws -> [String: [String]] {
         if queryFailureAfterRemoval && !calls.isEmpty { throw ScanError.timeout }
@@ -23,6 +26,7 @@ private actor FixtureBrew: HomebrewRemovalOperating, CommandRunning {
     func remove(executable: String, arguments: [String]) throws -> Int32 {
         calls.append(arguments)
         if !keepRegistration { registry.removeValue(forKey: arguments.last!) }
+        if changeUnrelated { registry.removeValue(forKey: "unrelated") }
         for path in cleanup {
             guard FileSystem.contained(path, in: root), path != root else { throw ScanError.permission }
             if FileSystem.exists(path) { try FileManager.default.removeItem(atPath: path) }
@@ -36,6 +40,7 @@ private actor FixtureBrew: HomebrewRemovalOperating, CommandRunning {
         }
     }
     func markAbsent() { registry = [:] }
+    func setVersions(_ versions: [String]) { registry["macventory"] = versions }
     var count: Int { calls.count }
 }
 private struct FixtureManagerValidation: UninstallValidating {
@@ -172,6 +177,21 @@ struct InstallationHealthTests {
         #expect(!ProtectionPolicy.protectedPath("/usr/local/bin/example"))
         #expect(ProtectionPolicy.protectedPath("/usr/bin/example"))
         #expect(ProtectionPolicy.protectedPath("/usr/locality/example"))
+    }
+    @Test func multipleCaskVersionsCannotBroadenTheReviewedOperation() async throws {
+        let box = try Sandbox.removal(); defer { box.clean() }; _ = try cask(box)
+        let manager = FixtureBrew(root: box.root.path)
+        await manager.setVersions(["1.0.0", "2.0.0"])
+        let item = try #require(try await HomebrewScanner(source: .homebrewCask, prefixes: [box.root.path], runner: manager).scan().items.first)
+        await #expect(throws: (any Error).self) { try await HomebrewRemovalAdapter(operation: manager).execute(UninstallPlanner.plan(for: item)) }
+        #expect(await manager.count == 0)
+    }
+    @Test func unrelatedHomebrewRegistryChangeCannotBeReportedAsCleanSuccess() async throws {
+        let box = try Sandbox.removal(); defer { box.clean() }; _ = try cask(box)
+        let manager = FixtureBrew(root: box.root.path); await manager.configure(changeOther: true)
+        let item = try #require(try await HomebrewScanner(source: .homebrewCask, prefixes: [box.root.path], runner: manager).scan().items.first { $0.packageID == "macventory" })
+        #expect(try await HomebrewRemovalAdapter(operation: manager).execute(UninstallPlanner.plan(for: item)) == .partialRemoval)
+        #expect(await manager.count == 1)
     }
     @Test func postflightQueryFailureIsUnknown() async throws {
         let box = try Sandbox.removal(); defer { box.clean() }; _ = try cask(box)
@@ -378,7 +398,17 @@ struct VendorAndProviderHealthTests {
     @Test(arguments: [true, false]) func vendorAssociationRequiresVerifiedMatchingTeam(matching: Bool) throws {
         let box = try Sandbox.removal(); defer { box.clean() }
         let appPath = try box.app("Vendor/App.app")
-        let toolPath = try box.app("Vendor/Uninstaller.app", id: "org.example.uninstaller")
+        let appMetadata = URL(fileURLWithPath: appPath + "/Contents/Info.plist")
+        var appInfo = try PropertyListSerialization.propertyList(from: Data(contentsOf: appMetadata), format: nil) as! [String: Any]
+        appInfo["CFBundleExecutable"] = "App"
+        try PropertyListSerialization.data(fromPropertyList: appInfo, format: .xml, options: 0).write(to: appMetadata)
+        try box.write("Vendor/App.app/Contents/MacOS/App", "Inert target")
+        let toolPath = try box.app("Vendor/App.app/Contents/Helpers/Uninstaller.app", id: "org.example.uninstaller")
+        let metadata = URL(fileURLWithPath: toolPath + "/Contents/Info.plist")
+        var info = try PropertyListSerialization.propertyList(from: Data(contentsOf: metadata), format: nil) as! [String: Any]
+        info["CFBundleExecutable"] = "Uninstaller"
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: metadata)
+        try box.write("Vendor/App.app/Contents/Helpers/Uninstaller.app/Contents/MacOS/Uninstaller", "Inert fixture")
         var item = try NativeScanner.item(at: appPath); item.primarySource = .pkg
         let signing = FixtureSigning(teams: [FileSystem.canonical(appPath): "TEAM_A", FileSystem.canonical(toolPath): matching ? "TEAM_A" : "TEAM_B"])
         let candidate = VendorUninstallerDiscovery.discover(for: item, checker: signing)

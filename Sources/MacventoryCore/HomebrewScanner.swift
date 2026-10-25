@@ -74,7 +74,7 @@ public struct HomebrewScanner: SoftwareScanner {
                 if let path = item.path, let bundle = try? NativeScanner.item(at: path), [.attention, .unverified].contains(bundle.installationHealth.status) {
                     item.health = .init(bundle.installationHealth.status, bundle.installationHealth.explanation, registration: state, artifacts: (prior?.artifacts ?? []) + (bundle.health?.artifacts.filter { $0.path != path } ?? []))
                 }
-                if state == .absent && item.path == nil {
+                if state == .absent && item.path == nil && (item.health?.artifacts.allSatisfy { $0.presence == .missing } ?? true) {
                     item.health = .init(.historical, "Caskroom metadata remains, but Homebrew no longer reports this token installed.", registration: .absent, artifacts: item.health?.artifacts ?? [])
                 }
                 items.append(item)

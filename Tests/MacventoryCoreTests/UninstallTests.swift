@@ -15,9 +15,17 @@ private actor RecordingRemoval: UninstallExecuting {
 private struct RejectValidation: UninstallValidating {
     func validate(_ plan: UninstallPlan) async throws { throw ScanError.permission }
 }
-private struct SlowValidation: UninstallValidating {
+private actor GatedValidation: UninstallValidating {
+    var started = false
+    var entered: CheckedContinuation<Void, Never>?
+    var release: CheckedContinuation<Void, Never>?
+    func waitUntilStarted() async {
+        if !started { await withCheckedContinuation { entered = $0 } }
+    }
+    func proceed() { release?.resume(); release = nil }
     func validate(_ plan: UninstallPlan) async throws {
-        try await Task.sleep(for: .milliseconds(100))
+        started = true; entered?.resume(); entered = nil
+        await withCheckedContinuation { release = $0 }
         try await FreshUninstallValidator(standaloneChecker: SimulatedStandaloneChecker(roots: [URL(fileURLWithPath: plan.item.path!).deletingLastPathComponent().path])).validate(plan)
     }
 }
@@ -150,13 +158,15 @@ struct UninstallTests {
         let box = try Sandbox.removal(); defer { box.clean() }
         let item = try standalone(box), recorder = RecordingRemoval()
         let plan = reviewPlan(for: item), replacement = reviewPlan(for: item)
-        let session = UninstallSession(executor: recorder, validator: SlowValidation())
+        let gate = GatedValidation()
+        let session = UninstallSession(executor: recorder, validator: gate)
         await session.prepare(plan)
         async let result = session.confirm(id: plan.id, acknowledged: true)
-        try await Task.sleep(for: .milliseconds(20))
+        await gate.waitUntilStarted()
         await session.prepare(replacement)
         await #expect(throws: (any Error).self) { try await session.confirm(id: plan.id, acknowledged: true) }
         await #expect(throws: (any Error).self) { try await session.confirm(id: replacement.id, acknowledged: true) }
+        await gate.proceed()
         #expect(try await result == .simulated)
         #expect(await recorder.calls == 1)
     }

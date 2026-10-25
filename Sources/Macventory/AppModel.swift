@@ -208,13 +208,22 @@ final class AppModel: ObservableObject {
         }
     }
     func verifyInteractiveRemoval() {
-        guard let plan = managementUninstallPlan, plan.executionLevel == .interactive, !managementWorking else { return }
+        guard let plan = managementUninstallPlan, plan.executionLevel == .interactive,
+              let previous = managementResult, previous.canVerifyInteractiveRemoval, !managementWorking else { return }
+        let token = managementID
         managementWorking = true
         Task {
+            defer { managementWorking = false }
             let outcome: UninstallOutcome = qaProtected ? .waitingForUser : await Task.detached { InteractiveRemovalVerification.verify(plan) }.value
-            managementResult = ManagementResult(steps: [.init(.uninstall, [.verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved].contains(outcome) ? .completed : outcome == .waitingForUser ? .waitingForUser : outcome == .partialRemoval ? .partial : .unknown, outcome.completionMessage)], simulated: qaProtected)
-            if !qaProtected { refreshAfterManagement = true }
-            managementWorking = false
+            guard managementID == token, managementUninstallPlan?.id == plan.id else { return }
+            managementResult = previous.verifyingInteractiveRemoval(outcome)
+            if !qaProtected {
+                refreshAfterManagement = true
+                if [.verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved].contains(outcome) {
+                    do { try await removedStore.record(RemovedApplicationRecord(item: plan.item)); await reloadLeftoverRecords() }
+                    catch { managementMessage = "Removal was verified, but removal history could not be saved: \(error.localizedDescription)" }
+                }
+            }
         }
     }
     func openRemovalInstructions(for item: SoftwareItem) {
@@ -494,7 +503,7 @@ final class AppModel: ObservableObject {
             missing.attributes["Expected application paths"] = expected
             missing.health = .init(.attention, "Application Missing — Homebrew Registration Remains. Synthetic installed token macventory, version 1.0.0; expected bundle is absent. Running QA copy is separate.", registration: .installed, artifacts: [.init(expected, .missing)])
             var historical = SoftwareItem(name: "nui-app installer receipt", kind: .package, source: .pkg, packageID: "org.example.nui")
-            historical.health = .init(.historical, "Synthetic receipt records a build-time path; it does not prove an installed application.", registration: .receiptOnly, artifacts: [.init("/Users/runner/work/nui/nui/build/bin/nui-app.app", .missing)])
+            historical.health = .init(.historical, "Synthetic receipt records a build-time path; it does not prove an installed application.", registration: .receiptOnly, artifacts: [.init(fixtureRoot.appendingPathComponent("Recorded/build/bin/nui-app.app").path, .missing)])
             var unknown = SoftwareItem(name: "Unverified Example", source: .unknown)
             unknown.health = .init(.unverified, "Synthetic permission denial; no absence inferred")
             var partial = SoftwareItem(name: "Partial Removal Example", kind: .package, source: .steam, packageID: "123")
@@ -505,7 +514,8 @@ final class AppModel: ObservableObject {
                 try? FileManager.default.createDirectory(at: vendorDirectory, withIntermediateDirectories: true)
                 let vendorApp = vendorDirectory.appendingPathComponent("Managed Example.app")
                 if !FileSystem.exists(vendorApp.path) { try? FileManager.default.copyItem(at: directory.deletingLastPathComponent(), to: vendorApp) }
-                let tool = vendorDirectory.appendingPathComponent("Uninstaller.app")
+                let tool = vendorApp.appendingPathComponent("Contents/Helpers/Uninstaller.app")
+                try? FileManager.default.createDirectory(at: tool.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if !FileSystem.exists(tool.path) { try? FileManager.default.copyItem(at: directory.deletingLastPathComponent(), to: tool) }
                 var vendor = app; vendor.name = "Interactive Vendor Example"; vendor.path = FileSystem.canonical(vendorApp.path)
                 vendor.id = SoftwareItem.identity(path: vendor.path, source: .unmanaged, packageID: "org.example.vendor")

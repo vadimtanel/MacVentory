@@ -30,6 +30,7 @@ public struct HomebrewRemovalAdapter: UninstallExecuting {
             if artifacts.contains(where: { $0.presence == .inaccessible }) { return .unknownResult }
             return artifacts.contains { [.present, .brokenLink].contains($0.presence) } ? .partialRemoval : .alreadyAbsent
         }
+        guard versions.count == 1 else { throw ScanError.process("Multiple installed versions would change the reviewed removal scope. Review this token in Homebrew.") }
         if cask, let version = Self.expectedVersion(for: plan.item), !versions.contains(version) { throw ScanError.process("Installed cask version changed. Refresh before reviewing removal.") }
         if !cask {
             try await HomebrewServiceReview.validate(operation.services(executable: executable), token: token)
@@ -43,6 +44,7 @@ public struct HomebrewRemovalAdapter: UninstallExecuting {
         do {
             let after = try await operation.installed(executable: executable, cask: cask)
             let artifacts = (plan.item.health?.artifacts ?? plan.item.path.map { [ArtifactObservation($0, .present)] } ?? []).map { ArtifactObservation.inspect($0.path) }
+            guard after.filter({ $0.key != token }) == installed.filter({ $0.key != token }) else { return .partialRemoval }
             return RemovalVerification.managerOutcome(installed: after[token] != nil, artifacts: artifacts, exitCode: exit)
         } catch { return .unknownResult }
     }

@@ -28,8 +28,8 @@ public enum InventoryMerger {
             existing.stale = existing.stale || other.stale
             let managerSources: Set<InstallSource> = [.homebrewCask, .homebrewFormula, .macPorts, .nix, .steam, .setapp, .toolbox]
             if managerSources.contains(existing.primarySource), existing.primarySource == other.primarySource {
-                let first = [existing.packageID, existing.attributes["Homebrew executable"], existing.attributes["Prefix"], existing.attributes["Profile"]].compactMap { $0 }.joined(separator: "|")
-                let second = [other.packageID, other.attributes["Homebrew executable"], other.attributes["Prefix"], other.attributes["Profile"]].compactMap { $0 }.joined(separator: "|")
+                let first = [existing.packageID, existing.attributes["Homebrew executable"], existing.attributes["Prefix"], existing.attributes["Nix profile"]].compactMap { $0 }.joined(separator: "|")
+                let second = [other.packageID, other.attributes["Homebrew executable"], other.attributes["Prefix"], other.attributes["Nix profile"]].compactMap { $0 }.joined(separator: "|")
                 if first != second { existing.attributes["Conflicting manager identities"] = [first, second].sorted().joined(separator: "\n") }
             }
             existing.attributes.merge(other.attributes) { current, _ in current }

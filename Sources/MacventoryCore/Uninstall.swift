@@ -87,6 +87,7 @@ public enum UninstallPlanner {
                       let executable = item.attributes["Homebrew executable"], executable.hasSuffix("/bin/brew") else { return result(.external, "The exact cask token, installed receipt and manager executable are required. Refresh, then review this installation in Homebrew.") }
                 let prefix = String(executable.dropLast("/bin/brew".count))
                 guard receiptPath == prefix + "/Caskroom/" + token + "/.metadata/INSTALL_RECEIPT.json", FileManager.default.isExecutableFile(atPath: executable) else { return result(.blocked, "The manager executable or receipt location changed.") }
+                guard !ProtectionPolicy.isRunningCopy(HomebrewTrust.caskRemovalScope(executable: executable, token: token, artifacts: [])) else { return result(.blocked, "The cask's staged payload contains this running Macventory copy. Use an external manager after quitting.") }
                 if let state = item.health?.registration, state != .installed { return result(.external, "Homebrew has not verified this exact token installed. Refresh Installation Status; historical metadata alone cannot authorize removal.") }
                 let receipt = try FileSystem.json(receiptPath)
                 guard CaskEffectReview.allowsAutomation(receipt, item: item) else {
@@ -95,6 +96,10 @@ public enum UninstallPlanner {
                 let config = try FileSystem.json((receiptPath as NSString).deletingLastPathComponent + "/config.json")
                 let mappings = try CaskMappedArtifact.read(receipt: receipt, config: config, root: prefix + "/Caskroom/" + token)
                 guard !mappings.isEmpty, item.path == nil || mappings.contains(where: { FileSystem.canonical($0.path) == item.path }) else { return result(.external, "The complete cask artifact scope cannot be established. No filesystem fallback will be substituted.") }
+                guard mappings.map(\.path).sorted() == (item.health?.artifacts.map(\.path) ?? []).sorted(),
+                      mappings.map({ ArtifactObservation.inspect($0.path) }).sorted(by: { $0.path < $1.path }) == (item.health?.artifacts ?? []).sorted(by: { $0.path < $1.path }) else {
+                    return result(.blocked, "The cask artifact targets changed since discovery. Refresh the inventory and review a new plan.")
+                }
                 let ownedApps = mappings.filter { $0.kind == "app" }.map(\.path)
                 for mapping in mappings { try mapping.validateForRemoval(ownedAppRoots: ownedApps) }
                 return result(.homebrewCask, (CaskEffectReview.hasQuitDirective(receipt) ? "Official quit directive is restricted to this bundle identifier; no matching copy may be running. " : "") + "Exact declarative cask artifact mappings verified. Homebrew may refuse a missing artifact; failure is reported with guided recovery and never retried with force. User data and dependencies remain.", executable: executable, arguments: ["uninstall", "--cask", "--", token], fingerprint: try fingerprint(item))
@@ -221,7 +226,8 @@ public struct FreshUninstallValidator: UninstallValidating {
                 guard !matchingCopy else { throw ScanError.process("Homebrew's quit directive could affect another running copy. Quit all matching copies yourself, then prepare a fresh review.") }
             }
             if plan.method == .homebrewFormula { try HomebrewServiceReview.validate(try await ProcessRunner().run(.brewServices(executable: executable)), token: token) }
-            let paths = plan.item.health?.artifacts.map(\.path) ?? plan.item.path.map { [$0] } ?? []
+            var paths = plan.item.health?.artifacts.map(\.path) ?? plan.item.path.map { [$0] } ?? []
+            if plan.method == .homebrewCask { paths = HomebrewTrust.caskRemovalScope(executable: executable, token: token, artifacts: paths) }
             guard !ProtectionPolicy.isRunningCopy(paths) else { throw ScanError.process("The operation affects the running Macventory copy; use external manager removal after quitting.") }
             let runningArtifact = await MainActor.run { NSWorkspace.shared.runningApplications.contains { app in
                 app.bundleURL.map { url in paths.contains { FileSystem.contained(url.path, in: $0) } } == true

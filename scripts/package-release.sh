@@ -2,6 +2,7 @@
 # Prepare local artifacts only. Never creates commits, uploads, or publishes releases.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/review-publication.py
 bash scripts/build-app.sh release
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 architecture="$(/usr/bin/lipo -archs build/Macventory.app/Contents/MacOS/Macventory | tr ' ' '-')"
@@ -16,7 +17,6 @@ cp Resources/DMG/FinderLayout "$stage/.DS_Store"
 source_name="Macventory-$version-source.tar.gz"
 # Use the reviewed Git publication set, not a recursive directory sweep that can
 # accidentally include regenerated/ignored resources or private local files.
-python3 scripts/review-publication.py
 COPYFILE_DISABLE=1 /usr/bin/tar -czf "artifacts/$source_name" -T build/publication-manifest.txt
 (
   cd artifacts

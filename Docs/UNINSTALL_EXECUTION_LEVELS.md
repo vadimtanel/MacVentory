@@ -1,5 +1,7 @@
 # Unified uninstall: execution levels and validation
 
+**Earlier development-pass report.** The current [final independent audit](UNINSTALL_FINAL_AUDIT.md) supersedes its staged-state, validation totals and security/deployment assessment.
+
 Development report, 24–25 October 2026. Branch: `feature/unified-uninstall-and-inventory-health`; HEAD: `22334cd`. This report supersedes the earlier pass’s source-removal limits in [Unified uninstall and inventory health](UNIFIED_UNINSTALL_AND_HEALTH.md). The existing 38 staged files were preserved; this continuation remains uncommitted and unstaged. No branch, commit, push, merge, tag, public release or release asset was created or changed.
 
 ## Product behavior
@@ -136,9 +138,4 @@ All changes remain uncommitted. The preexisting 38 staged paths remain staged; c
 
 ## Local QA evidence
 
-- [Direct level](../artifacts/execution-levels/direct-level.png) and [unchecked confirmation](../artifacts/execution-levels/direct-preview.png).
-- [Interactive level](../artifacts/execution-levels/interactive-level.png) and [waiting result](../artifacts/execution-levels/interactive-waiting.png).
-- [Guided level](../artifacts/execution-levels/guided-level.png) and [blocked level](../artifacts/execution-levels/blocked-level.png).
-- [Final tests](../artifacts/execution-levels/final-tests.log), [final build](../artifacts/execution-levels/final-build.log), [read-only benchmark](../artifacts/execution-levels/live-benchmark.log).
-
-These ignored local artifacts are available in this checkout and are not committed documentation assets.
+The ignored local evidence directory `artifacts/execution-levels/` contains Direct, Interactive, Guided and Blocked screenshots; final tests/build logs and the read-only benchmark. These files are available only in the original checkout and are not repository documentation assets. The final independent audit records current validation separately.

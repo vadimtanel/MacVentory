@@ -21,7 +21,7 @@ References: [official uninstall options](https://docs.brew.sh/Manpage), [cask ar
 
 ### nui-app
 
-The PKG receipt's installation root is `Users/runner/work/nui/nui/./build/bin` on volume `/`. The actual receipt ID is `com.wails.nui-app`, version `1.0.0`. Read-only filesystem inspection confirmed `/Users/runner/work/nui/nui/build/bin/nui-app.app/Contents/Info.plist` and its `Contents/MacOS/nui-app` executable currently exist. `/Applications/nui-app.app` was absent. The new live scan therefore correctly retains one PKG application at the build-looking path. Its appearance alone does not make it a stale receipt.
+The PKG receipt's installation root is `Users/runner/work/nui/nui/./build/bin` on volume `/`. The actual receipt ID is `com.wails.nui-app`, version `1.0.0`. Read-only filesystem inspection confirmed the recorded build copy’s `Contents/Info.plist` and its `Contents/MacOS/nui-app` executable currently exist. `/Applications/nui-app.app` was absent. The new live scan therefore correctly retains one PKG application at the build-looking path. Its appearance alone does not make it a stale receipt.
 
 The merger uses physical canonical paths, not names or bundle identifiers. Two actual nui copies remain two installations. Deleting the Applications copy does not delete the separate receipt payload. If the recorded build path is absent, the receipt becomes a historical package record; it cannot establish an active GUI application. An incomplete scan retains explicitly stale/unverified observations instead of declaring disappearance. Synthetic tests cover separate physical copies, historical records and stale-observation replacement. Receipt presence alone never authorizes `pkgutil --forget` or payload deletion.
 
