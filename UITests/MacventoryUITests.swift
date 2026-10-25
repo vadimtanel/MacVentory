@@ -25,10 +25,26 @@ private func requireFixtureSidebar(_ app: XCUIApplication) throws {
 }
 
 @MainActor
-private func launchSyntheticApp(arguments: [String]) throws -> XCUIApplication {
+private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil) throws -> XCUIApplication {
     let app = XCUIApplication()
     _ = try XCTUnwrap(arguments.contains("--ui-testing") ? app : nil, "GUI tests require synthetic inventory and removal")
     app.launchArguments = arguments
+    if let testCase, arguments.contains("--qa-execution-levels") {
+        let trace = FileManager.default.temporaryDirectory.appendingPathComponent("MacventorySelection-\(UUID().uuidString).jsonl")
+        app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-file", trace.path]
+        testCase.addTeardownBlock {
+            XCTContext.runActivity(named: "QA-only native selection observations") { activity in
+                guard let data = try? Data(contentsOf: trace), !data.isEmpty else {
+                    XCTFail("The requested native selection trace was not captured")
+                    return
+                }
+                let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                attachment.name = "native-selection.jsonl"
+                attachment.lifetime = .keepAlways
+                activity.add(attachment)
+            }
+        }
+    }
     app.launch()
     app.activate()
     _ = try XCTUnwrap(app.windows.firstMatch.waitForExistence(timeout: 10) ? app : nil)
@@ -73,7 +89,7 @@ final class MacventoryUITests: XCTestCase {
     }
 
     func testExplicitExecutionLevelsAndInteractiveVerification() throws {
-        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"])
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self)
         func preview(_ name: String, level: String, enabled: Bool) throws {
             let search = app.searchFields.firstMatch
             try clickVisible(search)
@@ -741,6 +757,77 @@ final class MacventoryUITests: XCTestCase {
         XCTAssertEqual(app.textFields["Recently installed threshold"].value as? String, "30")
     }
 
+}
+
+/// Temporary focused comparisons; excluded from the standard 16-method primary class.
+@MainActor
+final class MacventorySelectionPathDiagnostics: XCTestCase {
+    func testAWithoutSearch() throws { try compare(search: false) }
+    func testBSearchThenOneClick() throws { try compare(search: true) }
+    func testCSearchThenTabThenOneClick() throws { try compare(search: true, finishEditing: true) }
+    func testDSearchThenOneClickWithoutExtraActivation() throws { try compare(search: true, activateAgain: false) }
+    func testESearchThenNativeKeyboardSelection() throws { try compare(search: true, finishEditing: true, activateAgain: false, keyboard: true) }
+
+    private func compare(search: Bool, finishEditing: Bool = false, activateAgain: Bool = true, keyboard: Bool = false) throws {
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self)
+        defer {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Interaction result — selected row, Details and focus"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screen.lifetime = .keepAlways
+            add(screen)
+        }
+        let window = app.windows.firstMatch
+        if abs(window.frame.width - 1024) > 1 {
+            let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+            corner.press(forDuration: 0.2, thenDragTo: corner.withOffset(CGVector(dx: 1024 - window.frame.width, dy: 0)))
+        }
+        XCTAssertEqual(window.frame.width, 1024, accuracy: 8)
+        if search {
+            let field = app.searchFields.firstMatch
+            _ = try XCTUnwrap(field.waitForExistence(timeout: 5) && field.isHittable ? field : nil)
+            field.click()
+            field.typeKey("a", modifierFlags: .command)
+            field.typeText("Example App")
+            XCTAssertEqual(field.value as? String, "Example App")
+            if finishEditing { field.typeKey(.tab, modifierFlags: []) }
+        }
+        if activateAgain { app.activate() }
+        XCTAssertEqual(app.state, .runningForeground)
+        let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        let text = table.staticTexts["Example App"].firstMatch
+        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && table.staticTexts.matching(identifier: "Example App").count == 1 ? text : nil)
+        let before = XCTAttachment(string: app.debugDescription)
+        before.name = "Before the single native selection interaction"
+        before.lifetime = .keepAlways
+        add(before)
+        if keyboard {
+            app.typeKey(.downArrow, modifierFlags: [])
+        } else {
+            let nested = table.scrollViews.firstMatch
+            let viewport = nested.exists ? nested : app.scrollViews.containing(.any, identifier: "inventory.table").firstMatch
+            let coordinate = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let point = coordinate.screenPoint, frame = text.frame
+            let geometry = XCTAttachment(string: "text=\(frame) point=\(point) window=\(window.frame) table=\(table.frame) viewport=\(viewport.frame)")
+            geometry.name = "Single selection interaction geometry"
+            geometry.lifetime = .keepAlways
+            add(geometry)
+            _ = try XCTUnwrap(viewport.exists && !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
+                frame.width > 0 && frame.height > 0 && point.x.isFinite && point.y.isFinite && frame.contains(point) &&
+                [window.frame, table.frame, viewport.frame].allSatisfy { $0.contains(frame) && $0.contains(point) } ? text : nil)
+            coordinate.click() // Exactly one real name-relative click; no fallback or retry.
+        }
+        // Details may recreate the native table. Resolve its rendered replacement.
+        let selectedTable = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        let row = selectedTable.children(matching: .outlineRow).containing(.staticText, identifier: "Example App").firstMatch
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: row)
+        let title = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch.staticTexts["inventory.details.title"]
+        let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@", "Example App", "Example App"), object: title)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [selected, identity], timeout: 5) == .completed ? row : nil,
+                          "The actual selected row and Details must both identify Example App")
+    }
 }
 
 /// Independent mouse diagnostic. This class never substitutes for the strict

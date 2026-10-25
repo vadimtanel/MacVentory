@@ -19,6 +19,16 @@ struct InventoryView: View {
     @State private var showDetails = true
     @State private var headerSort = [InventoryComparator()]
 
+    private var selectionDiagnostics: Bool { QASelectionDiagnostics.enabled(isolated: model.fixtureMode) }
+    private var inventorySelection: Binding<String?> {
+        guard selectionDiagnostics else { return $selected }
+        return Binding(get: { selected }, set: { value in
+            QASelectionDiagnostics.record("binding.set", ["old": QASelectionDiagnostics.token(selected), "new": QASelectionDiagnostics.token(value),
+                "currentRowIDs": rows.map { QASelectionDiagnostics.token($0.id) }])
+            selected = value
+        })
+    }
+
     private var tableSort: Binding<[InventoryComparator]> {
         Binding(get: { headerSort }, set: { proposed in
             guard let first = proposed.first else { return }
@@ -54,7 +64,19 @@ struct InventoryView: View {
                         ManagementView(presentation: presentation, onReviewLeftovers: { managementPresentation = nil; model.closeManagement(); navigation = ["leftovers"] }).id(presentation.id)
                     }
                     .onAppear { headerSort = [InventoryComparator(InventorySortKey(rawValue: model.configuration.defaultSort) ?? .name)] }
-                    .onChange(of: rows.map(\.id)) { ids in if let selected, !ids.contains(selected) { self.selected = nil } }
+                    .onChange(of: selected) { value in
+                        if selectionDiagnostics { QASelectionDiagnostics.record("selection.observed", ["value": QASelectionDiagnostics.token(value)]) }
+                    }
+                    .onChange(of: search) { value in
+                        if selectionDiagnostics { QASelectionDiagnostics.record("search.changed", ["value": QASelectionDiagnostics.token(value)]) }
+                    }
+                    .onChange(of: rows.map(\.id)) { ids in
+                        if selectionDiagnostics { QASelectionDiagnostics.record("filteredRows.changed", ["currentRowIDs": ids.map { QASelectionDiagnostics.token($0) }]) }
+                        if let selected, !ids.contains(selected) {
+                            if selectionDiagnostics { QASelectionDiagnostics.record("selection.clear", ["reason": "selectedIDAbsentFromFilteredRows", "old": QASelectionDiagnostics.token(selected)]) }
+                            self.selected = nil
+                        }
+                    }
             }
         }
         .background(NativeControlHelp().frame(width: 0, height: 0))
@@ -154,6 +176,8 @@ struct InventoryView: View {
     private func details(_ item: SoftwareItem) -> some View {
         DetailsView(onUninstall: { reviewUninstall(item) }, item: item, unusedDays: model.configuration.unusedDays)
             .id(item.id)
+            .onAppear { if selectionDiagnostics { QASelectionDiagnostics.record("details.appeared", ["item": QASelectionDiagnostics.token(item.id)]) } }
+            .onDisappear { if selectionDiagnostics { QASelectionDiagnostics.record("details.disappeared", ["item": QASelectionDiagnostics.token(item.id)]) } }
     }
 
     private var statusBar: some View {
@@ -194,10 +218,13 @@ struct InventoryView: View {
     }
     private var table: some View {
         Group {
-            if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: $selected, sortOrder: tableSort) }
+            if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort) }
             else { legacyTable }
         }
         .onAppear { model.noteWindowAppearance() }
+        .background {
+            if selectionDiagnostics { QASelectionObserver(selected: selected, rows: rows.map(\.id), search: search).frame(width: 0, height: 0) }
+        }
 
         .overlay {
             if rows.isEmpty {
@@ -225,7 +252,7 @@ struct InventoryView: View {
 
     }
     private var legacyTable: some View {
-        Table(rows, selection: $selected, sortOrder: tableSort) {
+        Table(rows, selection: inventorySelection, sortOrder: tableSort) {
             TableColumn("Name", sortUsing: InventoryComparator(.name)) { item in
                 HStack(spacing: 9) {
                     AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"])
