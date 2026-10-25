@@ -9,9 +9,23 @@ struct DetailsView: View {
     let unusedDays: Int
     var compact = false
     var body: some View {
+        VStack(spacing: 0) { metadata }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { actionButtons }
+                    VStack(alignment: .leading, spacing: 8) { actionButtons }
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("inventory.details.actions")
+                    .accessibilityValue(compact ? "compact" : "regular")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("inventory.details")
+    }
+    private var metadata: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack { AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"]); Text(item.name).font(.title2).bold() }
+                HStack { AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"]); Text(item.name).font(.title2).bold().accessibilityIdentifier("inventory.details.title") }
                 InstallationHealthBadge(item: item, showLabel: true)
                 field("Installation Status", item.installationHealth.explanation)
                 field("Manager State", item.installationHealth.registration.rawValue)
@@ -53,18 +67,8 @@ struct DetailsView: View {
                 ForEach(item.sources, id: \.self) { source in
                     if let report = model.reports.first(where: { $0.source == source.source }) { field(source.source.title + " Scanner", report.state.title + (report.message.isEmpty ? "" : "\n" + report.message)) }
                 }
-                Divider()
-                if !compact { actionButtons }
             }.padding(20).textSelection(.enabled)
-        }.accessibilityIdentifier("inventory.details")
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if compact {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) { actionButtons }
-                        VStack(alignment: .leading, spacing: 8) { actionButtons }
-                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
-                }
-            }
+        }.accessibilityIdentifier("inventory.details.scroll")
     }
     @ViewBuilder
     private var actionButtons: some View {
