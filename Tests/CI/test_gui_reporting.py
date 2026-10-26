@@ -200,12 +200,12 @@ sys.exit(65 if mode == 'failed' else 143 if mode == 'interrupted' else 0)
         triggers = workflow.split('permissions:', 1)[0]
         self.assertIn('    branches-ignore:\n      - release/v1.1.0-stabilization', triggers)
 
-    def test_startup_matrix_uses_fresh_independent_jobs_and_distinct_artifacts(self):
+    def test_startup_runs_only_original_cold_case_and_retains_its_artifacts(self):
         workflow = (ROOT/'.github/workflows/ci.yml').read_text()
         ui = workflow.split('  ui:\n', 1)[1]
         expression = next(line for line in ui.splitlines() if 'startup_arm: ${{ fromJSON(' in line)
         arrays = [json.loads(v) for v in re.findall(r"'(\[.*?\])'", expression)]
-        self.assertEqual(arrays, [list(verifier.STARTUP_ARMS), ['suite']])
+        self.assertEqual(arrays, [['original'], ['suite']])
         self.assertIn('fail-fast: false', ui)
         self.assertIn('STARTUP_ARM: ${{ matrix.startup_arm }}', ui)
         self.assertIn("format('-startup-{0}', matrix.startup_arm)", ui)

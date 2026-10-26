@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       selection_scenario:
-        description: Temporary GUI diagnostics; startup investigates missing windows without selection
+        description: Temporary GUI diagnostics; startup verifies the repaired original cold launch
         required: true
         default: isolated
         type: choice
@@ -80,9 +80,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Each startup comparison is the first and only GUI test on its own VM.
+        # Startup runs only the original cold-launch case; no comparison arms.
         # Other scenarios retain one job and their complete existing coverage.
-        startup_arm: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.selection_scenario == 'startup' && '["original","no-extra-activation","selection-disabled"]' || '["suite"]') }}
+        startup_arm: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.selection_scenario == 'startup' && '["original"]' || '["suite"]') }}
     env:
       SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || 'full' }}
       TESTED_SHA: ${{ github.sha }}

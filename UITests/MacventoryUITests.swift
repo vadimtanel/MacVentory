@@ -52,11 +52,13 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
         let nonce = UUID().uuidString
         let destination = try QATraceHandoff.location(nonce) // Derive only: the sandboxed runner cannot mkdir here.
         let startupNonce = UUID().uuidString
-        if selectionDiagnostics { app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce] }
+        if selectionDiagnostics {
+            app.launchArguments += ["--qa-selection-diagnostics"]
+            app.launchEnvironment[QATraceHandoff.selectionEnvironmentKey] = nonce
+        }
         if startupDiagnostics {
             app.launchArguments += ["--qa-startup-diagnostics"]
-            // Keep the independent observer's nonce out of AppKit's argument domain.
-            // The original selection-trace argument transport stays identical in A/B.
+            // Keep both diagnostic nonces out of AppKit's argument domain.
             app.launchEnvironment[QATraceHandoff.startupEnvironmentKey] = startupNonce
         }
         testCase.addTeardownBlock {
@@ -372,8 +374,7 @@ final class MacventoryUITests: XCTestCase {
             frame.width > 0 && frame.height > 0 && point.x.isFinite && point.y.isFinite && frame.contains(point) &&
             [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(point) && $0.contains(text.frame) } ? row : nil,
             "Selection stage 2: native row center and identified name must be visible, without a modal overlay", file: file, line: line)
-        let arguments = app.launchArguments
-        let nonce = arguments.firstIndex(of: "--qa-selection-trace-id").map { arguments[$0 + 1] }
+        let nonce = app.launchEnvironment[QATraceHandoff.selectionEnvironmentKey]
         let previousEvents = nonce.map(selectionEvents) ?? []
         let before = previousEvents.last?["sequence"] as? Int ?? 0
         let wasSelected = row.isSelected

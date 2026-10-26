@@ -11,6 +11,7 @@ enum QATraceHandoff {
     static let traceName = "native-selection.jsonl"
     static let startupName = "startup.jsonl"
     static let lifecycleName = "startup-lifecycle.jsonl"
+    static let selectionEnvironmentKey = "MACVENTORY_QA_SELECTION_TRACE_ID"
     static let startupEnvironmentKey = "MACVENTORY_QA_STARTUP_TRACE_ID"
     static let traceLimit = 1_048_576
     static let startupLimit = 16_384
@@ -249,15 +250,18 @@ enum QASelectionDiagnostics {
     }
     private static var attempted = false
     private static var cleanupObserver: NSObjectProtocol?
-    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
+    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments,
+                      environment: [String: String] = ProcessInfo.processInfo.environment) {
         guard !attempted, enabled(isolated: isolated, arguments: arguments) else { return }
         attempted = true
         var startup: FileHandle?
         do {
-            guard let index = arguments.firstIndex(of: "--qa-selection-trace-id"), arguments.indices.contains(index + 1) else {
-                throw QATraceHandoff.failure("Missing --qa-selection-trace-id", code: EINVAL)
+            // Cold QA presentation depends on the original argument arrangement.
+            // Transport this opaque metadata independently of launch-argument order.
+            guard let nonce = environment[QATraceHandoff.selectionEnvironmentKey] else {
+                throw QATraceHandoff.failure("Missing " + QATraceHandoff.selectionEnvironmentKey, code: EINVAL)
             }
-            let directory = try QATraceHandoff.Directory.create(arguments[index + 1])
+            let directory = try QATraceHandoff.Directory.create(nonce)
             cleanupObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
                                                                      object: nil, queue: .main) { _ in
                 do { try directory.remove() }
