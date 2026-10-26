@@ -383,7 +383,7 @@ final class MacventoryUITests: XCTestCase {
         let before = previousEvents.last?["sequence"] as? Int ?? 0
         let wasSelected = row.isSelected
         let wasObserved = previousEvents.last { $0["event"] as? String == "selection.observed" }?["value"] as? String == token
-        row.click() // Exactly one native row action, not a child StaticText coordinate.
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click() // One native row-center click.
         if let nonce {
             try requireSelectionEvent("Selection stage 3: the mouse must hit the intended native row", nonce: nonce, after: before, matching: { event in
                 guard event["event"] as? String == "event.beforeDelivery", event["eventType"] as? Int == 1,
