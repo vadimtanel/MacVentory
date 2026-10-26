@@ -13,10 +13,10 @@ Inspected full GUI job logs and both original xcresult archives:
 
 The Push checkout is the base SHA. The PR artifact records checkout `88a5fb93d62ae205b8b2f3368c59b8187fffa5cd`, GitHub’s synthetic merge of the base feature SHA into `87de37f37a2c6e859174a27ce5a70a0c995fce26`. The fetched merge metadata confirms the feature parent and tree `45f0036d2547b045dd2425df1515646d7e69be8c`, identical to the local base tree. Distinguish the PR checkout SHA from its feature-head metadata. Native jobs succeeded. Each primary GUI suite executed 16 cases: 15 passed, 1 failed, 0 skipped, with two assertion failures in `testExplicitExecutionLevelsAndInteractiveVerification`. The final GUI jobs failed; the intermediate continue-on-error step does not establish success. Header proxy and independent pointer diagnostics passed.
 
-The xcresult launch records supply `--ui-testing --qa-execution-levels --qa-selection-diagnostics --qa-selection-trace-file` followed by:
+Absolute paths below are sanitized for publication. Original paths and console evidence remain in the ignored local evidence archives. The xcresult launch records supply `--ui-testing --qa-execution-levels --qa-selection-diagnostics --qa-selection-trace-file` followed by:
 
-- Push: `/Users/runner/Library/Containers/org.vadimtanel.MacventoryUITests.xctrunner/Data/tmp/MacventorySelection-A2B383AD-D075-4D6D-9D66-E4A595F01286.jsonl`.
-- PR: `/Users/runner/Library/Containers/org.vadimtanel.MacventoryUITests.xctrunner/Data/tmp/MacventorySelection-1F2BEFE5-26DF-489B-A764-E31500BA1A7A.jsonl`.
+- Push: `<XCTest-runner-container-temp>/MacventorySelection-A2B383AD-D075-4D6D-9D66-E4A595F01286.jsonl`.
+- PR: `<XCTest-runner-container-temp>/MacventorySelection-1F2BEFE5-26DF-489B-A764-E31500BA1A7A.jsonl`.
 
 The retained application consoles contain:
 
@@ -76,7 +76,7 @@ macOS 27.0.1; Command Line Tools with macOS 26.5 SDK for SwiftUI compilation. Fu
 - Legacy implementation compiled from base HEAD: separate child with a different TMPDIR rejects the controller's destination before any file is created. Confirms a real gap in the old single-process contract.
 - Final separately launched QA bundle: passed startup/trace/controller read. Receipt confirms isolated/enabled/ui-testing flags and canonical roots; observer creation and attachment, actual mouse delivery, search, binding assignment, observed selection and Details events are present. Final reviewed-build trace (`review-app-trace.jsonl`): 37 records, 25,673 bytes; SHA256 `3766a3a60d62f60ac4cef029ceae256124819f03bfc8cd103d11196f574cef65`. Synthetic names and identifiers are absent from the trace. One searched-result pointer click selected Example App and showed matching Details locally.
 - A preliminary five-second background-only observer poll expired: startup was already ready; window construction/observer attachment occurred after normal app activation. The final check explicitly observed activation before requiring window events. This was a local harness timing limitation, not a suppressed passing check.
-- The final GUI launch's app and controller canonical temp roots were both `/private/var/folders/yd/q93tytqx2695prp_m62s87s80000gn/T`; distinct-root coverage is the separate-process contract, not this GUI launch. Earlier Foundation `/var` versus Python `/private/var` spellings were aliases, not proof of different physical roots.
+- The final GUI launch's app and controller canonical temp roots were both the same canonical per-user temporary directory; distinct-root coverage is the separate-process contract, not this GUI launch. Earlier Foundation versus Python spellings of that directory were aliases, not proof of different physical roots.
 - Actual QA app with an intentionally preexisting test trace: startup reports `Create native-selection.jsonl: errno=17 (File exists)`; existing fixture bytes preserved; synthetic inventory still usable.
 - Actual QA app without diagnostic flag: eight synthetic rows and QA protection visible; no startup or trace files created. All QA sessions quit normally.
 - Project regeneration deterministic; `git diff --check` and Swift syntax parsing of the UI target passed. Full hosted Xcode target compilation, XCTest attachment delivery and macOS 26 behavior require the focused hosted run; syntax parsing is not XCUITest execution.

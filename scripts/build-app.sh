@@ -19,8 +19,12 @@ for document in LICENSE NOTICE; do
   if [ -f "$document" ]; then cp "$document" "$app_directory/Contents/Resources/"; fi
 done
 # SwiftPM release binaries can retain local object-file paths in debug symbols.
-# Strip only the copied distribution executable before sealing the app bundle.
-if [ "$configuration" = release ]; then /usr/bin/strip -S "$app_directory/Contents/MacOS/Macventory"; fi
+# Strip only copied release executables before signing; keep build products and
+# Debug symbols intact. The helper embeds identity metadata that -S preserves.
+if [ "$configuration" = release ]; then
+  /usr/bin/strip -S "$app_directory/Contents/MacOS/Macventory"
+  /usr/bin/strip -S "$app_directory/Contents/MacOS/MacventoryPrivilegedHelper"
+fi
 /usr/bin/codesign --force --sign - "$app_directory/Contents/MacOS/MacventoryPrivilegedHelper"
 /usr/bin/codesign --force --sign - "$app_directory"
 printf '%s\n' "$app_directory"
