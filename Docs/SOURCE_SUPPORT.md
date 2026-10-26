@@ -1,6 +1,6 @@
 # Installation-source support
 
-Current feature behavior, execution-level matrix and validation are documented in [Uninstall execution levels](UNINSTALL_EXECUTION_LEVELS.md). That report supersedes the earlier pass and historical uninstall limits below. Historical build notes remain for context.
+Current discovery scope for **v1.1.0 / build 108** is listed below. Detection, installation health and removal eligibility are separate capabilities: a recognized source does not imply automatic uninstall support. See the [current removal matrix](UNINSTALL.md#current-source-specific-removal-support) and [verification status](VERIFICATION.md). Historical execution/audit reports retain their original test counts and branch state.
 
 All ten categories exist in the UI, plus Unknown / Ambiguous. A zero result, absent manager, unsupported layout and failed scan are distinct states. “Fixture verified” does not mean verified against a real installation.
 

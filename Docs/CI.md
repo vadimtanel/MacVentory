@@ -1,4 +1,43 @@
-# Cloud Xcode verification — 24 October 2026
+# Continuous integration — v1.1.0
+
+Current metadata: **1.1.0 / build 108**. Workflows are implemented and have hosted execution evidence; the historical repair report below describes an earlier build and must not be read as current branch, authorization or CI status.
+
+## Current workflow contract
+
+[Build and test Macventory](../.github/workflows/ci.yml) runs on push, pull request and manual dispatch. Both jobs use standard `macos-26` arm64 and pin `DEVELOPER_DIR=/Applications/Xcode_26.5.app/Contents/Developer`. The toolchain script verifies actual architecture, OS, Xcode, Swift and SDK; a missing pin fails rather than silently selecting a default. Opt-in read-only live integrations are disabled (`MACVENTORY_LIVE_TESTS=0`). Signing is ad hoc with no Apple credentials/notarization.
+
+| Job | Required work |
+|---|---|
+| `native` | SwiftPM build/fixture tests, Xcode app build, compilation of all test targets, isolated hosted Xcode unit tests, arm64 app/ZIP/DMG/source packaging, artifact validation and evidence upload |
+| `ui` | Synthetic XCUITest, actual count/order/result verification, full-scenario native header comparison and independent pointer diagnostic, explicit outcome reporting and evidence upload |
+
+App hosts use isolated `--ui-testing` data and simulation; no real removal or helper activation is part of CI. Production adapters with fake effects verify orchestration and error contracts, not real destructive correctness.
+
+## Full runs versus diagnostic scenarios
+
+Push/PR select `full`. Manual dispatch defaults to `isolated`, so it must explicitly select `full` for final release verification. Available diagnostic scenarios are `isolated`, `paths`, `after-layout` and `after-headers`; their successful subsets cannot validate the complete suite.
+
+The full scenario requires all **16** primary `MacventoryUITests` methods. `scripts/verify-ui-selection-run.py` checks actual starts, passes, missing/failed/skipped/repeated cases and the Xcode success marker against the source suite. Inspect `selection-scenario.txt`, `tested-head.txt`, `gui-sequence.json`, logs and xcresults for agreement with the run's SHA. Diagnostic-class methods are separate from the 16-case primary suite.
+
+The GUI command has `continue-on-error` to preserve evidence collection. Sequence verification and final reporting still fail the job if execution did not validate. Further desktop diagnostics run only after the primary Xcode execution finalized normally; a cancelled/incomplete attempt is not a pass. A native-only success does not establish full CI.
+
+## Artifacts and publication boundary
+
+`verification-arm64` includes verification logs, built app and versioned release candidates. `verification-ui` includes GUI evidence. Uploads are retained for 14 days. Artifact validation checks signatures, architecture, source/app version/build agreement, private compiler-path absence, DMG integrity, all SHA-256 entries, ZIP file bytes and exact reviewed source-manifest membership/hashes; it does not install or launch the app.
+
+The manual [packaging workflow](../.github/workflows/package.yml) builds/tests/packages and validates artifacts but does not run the full Xcode/GUI sequence. It cannot replace the full workflow. Neither workflow creates a Git tag/GitHub Release or updates the separate Tap.
+
+## Evidence for documentation preparation — 26 October 2026
+
+The starting `main` SHA is `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. [Push run 40309598774](https://github.com/vadimtanel/MacVentory/actions/runs/40309598774), attempt 1, completed with **failure**. The native job (`121527167267`) passed, including hosted Xcode units, packaging and artifact validation. The UI job (`121529874468`) failed its actual-count/order verification and final outcome reporting. GitHub's step summaries list the primary XCUITest step and both header diagnostics as successful, but that does not override the failed sequence gate or establish all 16 cases passed. Raw logs/xcresults still require inspection to explain the mismatch; no underlying selection fix/failure is inferred from summaries alone. This is a dated observation, not a live status badge.
+
+The subsequent documentation commit changes source-archive inputs and has **no hosted validation yet**. After separate push approval, require full native/UI success and reviewed artifacts for its exact SHA before tagging. Older successful jobs do not validate new source/docs. See [Verification](VERIFICATION.md) and [release sequence](RELEASING.md).
+
+Real provider effects, native Trash, signed-helper deployment, macOS 13 runtime, full VoiceOver and clean-machine Gatekeeper remain separate unverified areas. Default ad-hoc signing is intentional; Developer ID/notarization are not supplied by these jobs.
+
+## Historical cloud Xcode repair report — 24 October 2026
+
+The following build-102 report is retained unchanged as historical evidence. Its local/uncommitted and no-hosted-run statements refer to that repair pass only.
 
 Macventory 1.0.0/build 102. These changes are prepared locally; no revised GitHub run has executed. No commit, push, tag, release or repository-setting change is authorized by this work.
 

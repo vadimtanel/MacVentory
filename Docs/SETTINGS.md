@@ -13,13 +13,15 @@ Local absolute paths and ~/ paths are accepted; URLs/control characters are reje
 | Page | Purpose |
 |---|---|
 | General | System-app discovery/visibility, absent-source visibility, appearance and the initial sort for new inventory windows. Visibility never authorizes removal. |
-| Scanning | Scan on launch, supported mounted external locations, extra app directories (one per line), Homebrew/Toolbox roots (commas), local MacPorts/Nix executables. Relevant changes refresh once on Done. |
+| Scanning | Scan on launch, supported mounted external locations, extra app directories (one per line), Homebrew/Toolbox roots (commas), local MacPorts/Nix executables, and default-off related-folder discovery in Documents/Downloads/Desktop. Relevant changes refresh once on Done. |
 | Discovery | Recently Installed1–365 days; Possibly Unused1–3650 days, default 180. Type numbers or use steppers. Large Applications offers explicit500 MB/1 GiB/5 GiB/10 GiB thresholds. |
 | Information | Scanner status, source availability/limitations, sanitized diagnostic export and inventory-cache scope. Failed, Unsupported, Empty and Not Installed are different states. |
 
 Installation dates require reliable evidence, not file creation. Missing last-opened metadata never means unused. Logical payload size is informational, not guaranteed reclaimable space. Discovery is read-only; uninstall is a separate confirmed operation.
 
 Diagnostics export only source status/counts, excluding names, paths, identifiers and raw errors. Cache clearing affects only Macventory's saved snapshot, never installed software. Neither action was invoked against real data during this QA pass.
+
+The related-folder option allows only bounded direct-child suggestions and never selects personal data automatically. Each possible folder requires individual exact-path review/confirmation; linked/shared/protected targets remain blocked. Turning it off removes personal suggestions. Installation-health status/filtering and source evidence are independent of these discovery preferences; a warning never grants cleanup authority. See [current management behavior](UNINSTALL.md).
 
 ## About and link configuration
 

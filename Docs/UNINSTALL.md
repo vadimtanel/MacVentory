@@ -1,4 +1,69 @@
-# Single-application uninstall
+# Uninstall and application management — v1.1.0
+
+This section describes version **1.1.0 / build 108**. The build-by-build notes after the historical divider preserve earlier behavior and QA results; they do not define current support. [Installation](INSTALLATION.md), [source discovery](SOURCE_SUPPORT.md), [security](../SECURITY.md) and [verification](VERIFICATION.md) provide complementary limits.
+
+## Review and confirmation
+
+Double-click a row, press Return, or choose **Uninstall…** to open one application-name-titled management sheet. Opening review performs no removal. **Force Quit**, **Clear App Data** and **Uninstall** have independent eligibility. Review exact identities, paths, selected actions, removal level, scope and verification method. The initially unchecked checkbox binds to the immutable plan; changing the plan/selection resets it. Confirmation is single use and fresh validation precedes effects.
+
+| Level | Meaning |
+|---|---|
+| Direct Uninstall | Execute the eligible, reviewed official manager operation or scoped native bundle Trash. “Direct” still requires confirmation and fresh checks. |
+| Interactive Uninstall | Open the verified targeted client/vendor tool; the user reviews its own choices. Launch reports **Waiting for User**, not successful removal. |
+| Guided Only | Show source-specific manual instructions. Macventory executes no removal for this plan. |
+| Protected / Blocked | Independent safety override for protected, stale, conflicting, running or unsafe targets; no executable removal. |
+
+Combined actions validate all selected targets, perform the process action and verify exit, move selected app data to Trash, then execute eligible uninstall. Critical failure/partial cleanup stops later steps. Results preserve each step and distinguish completed, partial, failed, cancelled, already absent and unknown. Terminal results have one **OK** button; dismissal restores interaction and triggers inventory refresh. Verification disables dismissal while busy. Completed actions cannot be submitted again.
+
+**Verify Removal** rechecks eligible waiting/partial/unknown uninstall outcomes and preserves earlier process/data results. Vendor verification establishes only selected bundle absence, not complete vendor cleanup. **Refresh Installation Status** updates observations after guided work. A warning, missing app or historical receipt is evidence, never authorization to delete.
+
+## Current source-specific removal support
+
+These are the highest implemented levels for eligible installations, not automatic permissions for a whole source. Every real destructive route below remains unverified; production adapter tests inject fake effects and isolated fixtures.
+
+| Source | Eligible mechanism | Limits and verification |
+|---|---|---|
+| Homebrew Casks | Direct normal `brew uninstall --cask -- token` for reviewed app/font/owned-binary mappings, including supported multiple artifacts, renames and configured directories | Fresh token/receipt/config/executable/artifact proof; unsupported hooks, scripts, services, PKGs or ambiguous versions use guidance. Requery registration/artifacts and unrelated tokens. Missing-app normal uninstall may fail; no force/zap/Caskroom deletion fallback. |
+| Homebrew Formulae | Direct normal `brew uninstall --formula -- token` for one verified installed version | Dependents and loaded/running/unverified services block automation. Verify registry, keg/artifacts and unrelated tokens. No service shutdown, dependency removal or autoremove. |
+| MacPorts | Direct exact `port -N uninstall name @version_revision+variants` | Standard `/opt/local`, safe manager/config/payload identity, no dependent/service/extension conflict. Root operations need trusted matching app/helper signing, background-helper approval and per-request OS administrator rights. Default ad-hoc builds use guidance for root-owned registries. Requery exact/other port identities and reviewed artifacts; CLI postflight samples at most 64 paths. |
+| Nix | Direct exact named-element removal with `nix --offline profile remove --profile <slot> -- <element>` | Supported current-user mutable profile, named manifest v3, Nix 2.28–2.35. Legacy/indexed/declarative/system/unverifiable profiles use guidance. Verify chosen element absent, all other records unchanged and mutable slot valid. Store objects/older generations remain; no garbage collection. |
+| PKG Installers | Interactive trusted embedded vendor uninstaller first; otherwise Direct bundle-only Trash when independently eligible | Receipts alone cannot authorize payload deletion. Matching receipt claim and complete ownership checks are required for bundle fallback. Verify original bundle absence; receipt deliberately remains historical. No `pkgutil --forget` or receipt-wide deletion. |
+| Mac App Store | Direct limited native bundle Trash after signing/receipt, ownership, path and service checks | Local receipt implies source, not purchase authentication. Protected/ineligible bundles use guidance/blocking. Verify original path absent; purchases/account/user data remain outside scope. |
+| Direct / Unmanaged | Interactive trusted embedded vendor tool first; otherwise independently eligible Direct bundle Trash | Standard Applications roots and supported narrowly configured user-owned roots; strict identity/permissions/volume/protection/process/ownership checks. No complete external-component uninstall claim. |
+| Steam | Interactive `steam://uninstall/<AppID>` in the exact verified signed client | Requires unique exact App ID/library evidence. User completes Steam confirmation. Verify payload, selected manifest and every registered library/index; disconnected/retained state stays unknown/partial. Real macOS handoff and current primary protocol revalidation remain pending. |
+| Setapp | Guided removal in Setapp | No trustworthy supported exact-target integration established. Framework evidence does not authenticate subscription/registration; no deletion behind the manager. |
+| JetBrains Toolbox | Guided removal of the exact IDE/version/path in Toolbox | Recognized launcher association is inferred. No supported targeted macOS uninstall CLI/deep link established; no managed-directory deletion. |
+| Unknown / conflicting / protected | Blocked or specific guidance where justified | Refresh/resolve evidence rather than guessing an owner or operation. Health does not override protection. |
+
+The [independent audit](UNINSTALL_FINAL_AUDIT.md) records implementation findings and the [execution-level report](UNINSTALL_EXECUTION_LEVELS.md) records earlier adapter contracts. Their historical branch/index/test-count claims are not current release status.
+
+## Ownership, authorization and outcome boundaries
+
+Preparation selects one strategy. Exact manager identity/version, receipt/configuration/executable/payload fingerprints, source conflicts, running/self protection, expiry and permissions are checked again before effects. Failure never switches to another strategy. Separate physical copies remain separate, including an absent managed copy alongside a different running development build.
+
+Native bundle removal uses `NSWorkspace.recycle`, requires the selected URL's returned Trash mapping and independently checks original-path absence. It never permanently deletes or sweeps external components. Symlinks, unsafe ancestors, changed identity, unsupported ownership audits and service/helper components can block eligibility. No path-based API eliminates every validation-to-effect race. An accepted Finder/manager operation can finish after cancellation/timeout; unknown outcomes require inspection, not automatic retry or a rollback claim.
+
+Vendor association requires valid Apple-anchored signatures, matching publisher team, an embedded association and fresh target/tool identity. Launch disables substitution by another running physical copy. Publisher association does not prove one-product scope; review the vendor tool's choices. Generic sibling/vendor-folder discovery and universal silent vendor scripts are unsupported.
+
+The MacPorts helper accepts only exact typed requests, authenticates both XPC peers and checks administrator authority before preflight and again before the privileged effect. Background-helper availability alone grants no removal authority. Approval is persistent and revocable in Login Items; no uninstall is queued while approval is pending, and a new preview is required afterwards. Real signed deployment, authorization and helper lifecycle remain unverified. Installing/scanning Macventory does not register it.
+
+## App data and Leftover Data
+
+Force Quit matches canonical bundle URL, identifier, PID and launch time, warns about unsaved work and verifies exit before later actions. Save work and quit normally first where possible. System components, Macventory itself and uncertain process identities are protected.
+
+Clear App Data is independent of uninstall. Bounded user-Library discovery distinguishes exact-ID Verified App Data, individually reviewed Possible Related Files and shared/protected locations. Leftover Data uses current inventory/Launch Services exclusion, minimal removal records and bounded retrospective discovery. Retained friendly names and explicit embedded-parent relationships support display/grouping only; names, equal prefixes and last observation never grant cleanup authority.
+
+Application/Identifier grouping, search/confidence filters and structured scan issues support review. **Select All Verified Data** excludes possible, personal, shared and protected data. **Move Selected to Trash** opens a separate exact-path confirmation. Selected folders move whole with their contents; parents/unselected folders remain. Fresh checks reject linked, changed, duplicate/nested or unsafe paths. Permission failures identify preflight versus Finder stages; the app cannot grant itself privacy access.
+
+Optional direct-child suggestions in Documents/Downloads/Desktop are off by default under Scanning Settings. They require individual selection/manual review and never join automatic verified selection. No recursive personal-folder or external-volume sweep is performed. A partial scan permits only independently checked candidates outside affected locations; failed/cancelled scans require retry. Already absent means **No Longer Exists**, never a credited deletion; unknown Finder outcomes stop further submissions without retry.
+
+## Validation and limits
+
+No real installed software, process, user data or privileged helper is a QA target. `--ui-testing` and persistent QA bundles use isolated fixtures/simulation; `--demo` has fictional non-actionable records. Read-only live inventory tests do not establish removal safety. Actual native Trash/restoration, manager effects, vendor/Steam completion and signed-helper approval/deployment require separately authorized disposable environments. See [the verification plan](UNINSTALL_FOCUSED_VALIDATION.md). No bulk uninstall, automatic dependencies, zap, store GC, arbitrary shell operation or complete third-party data cleanup is implemented.
+
+## Historical build notes — superseded by v1.1.0 above
+
+The remainder is retained development history, including superseded support matrices, UI labels and validation claims. Its build identifiers and recorded outcomes are intentionally unchanged. Use the current sections above for product behavior and [Verification](VERIFICATION.md) for release status.
 
 Current feature behavior, execution-level matrix and validation are documented in [Uninstall execution levels](UNINSTALL_EXECUTION_LEVELS.md). That report supersedes the earlier pass and historical uninstall limits below. Historical build notes remain for context.
 

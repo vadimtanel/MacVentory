@@ -9,6 +9,21 @@
 - Uninstall tests inject mock/simulated executors. A successful test proves planning/confirmation/simulation, not deletion. Actual destructive testing requires separate owner authorization in a controlled environment.
 - Document provider formats and limitations in the source matrix. Apple Silicon is the release focus; preserve harmless Intel compatibility without making unsupported claims.
 
+## Development and documentation checks
+
+Use the existing wrappers from the repository root:
+
+```sh
+MACVENTORY_LIVE_TESTS=0 bash scripts/swift-tool.sh test --disable-xctest
+bash scripts/swift-tool.sh build
+python3 scripts/review-publication.py
+git diff --check
+```
+
+The package targets macOS 13.0; Swift Testing needs a macOS 14+ test host. Opt-in live inventory checks are read-only and separate from the synthetic suite. Full hosted validation must cover the exact candidate commit, native and UI jobs, all 16 primary GUI cases and diagnostics; an isolated scenario is insufficient. See [CI](Docs/CI.md) and [verification](Docs/VERIFICATION.md).
+
+For documentation-only work, validate changed Markdown, relative links/assets and current-state claims; require zero publication findings and stage only reviewed documentation. Preserve historical build evidence. Follow [release preparation](Docs/RELEASING.md) for version/commit/tag boundaries. v1.1.0 is already configured as build 108; documentation work does not bump it. Fake effects do not validate actual removal or signed-helper deployment; do not activate the helper during QA.
+
 ## License and attribution
 
 Contributions are under Apache-2.0. For redistribution, follow its section4 requirements: supply the license, mark modified files, retain pertinent source notices and reproduce relevant NOTICE attributions in an allowed readable location. The appendix placeholders in LICENSE are the official template; project attribution belongs in NOTICE.

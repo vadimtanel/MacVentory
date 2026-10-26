@@ -1,4 +1,26 @@
-# Macventory 1.0.0 verification — 24 October 2026
+# Verification — Macventory v1.1.0
+
+## Current documentation candidate — 26 October 2026
+
+Source metadata is **1.1.0 / build 108**, with configured macOS **13.0** minimum. Documentation preparation starts from clean `main` at `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. Version values are not incremented. v1.1.0 is upcoming; the owner will create the tag and publish the release separately.
+
+| Evidence category | Established evidence and limits |
+|---|---|
+| Implemented | Merged source-aware uninstall levels/adapters, installation health, missing-app/historical records, application management, separate Leftover Data, safeguards, diagnostics and packaging. Implementation does not prove real effects. |
+| Recorded local synthetic tests | The [trace-handoff report](SELECTION_TRACE_HANDOFF_VALIDATION.md) records 225 registered tests across 24 suites: 222 passed, 0 failed, 3 intentional live-test skips. Earlier 148/207/221/222 totals belong to their named snapshots; they are not new runs for this documentation commit. |
+| Recorded read-only live tests | Native/Homebrew/receipt observations and earlier opt-in read-only integration passes exist in the reports. They do not test removal. |
+| Hosted starting-commit evidence | [Run 40309598774](https://github.com/vadimtanel/MacVentory/actions/runs/40309598774), attempt 1, for `a5a66ef`: **overall failure**. Native passed SwiftPM, Xcode app/test compilation, hosted units, packaging and artifact validation. UI failed actual-count/order verification and final reporting. Primary GUI/header step summaries alone do not establish a full 16-case pass; raw evidence needs inspection. |
+| Final documentation commit | Local Markdown/link/publication/whitespace checks are recorded in the [documentation review](RELEASE_DOCUMENTATION_REVIEW.md). This commit has not been pushed or received full hosted CI. |
+| Real effects | Actual provider removal, native Finder Trash/restoration, real Force Quit, vendor/Steam completion and real signed-helper authorization/lifecycle remain unverified. Fake effects are not destructive safety evidence. |
+| Distribution/runtime | arm64 is primary. Recorded local runtime is M4 Pro/macOS 27.0.1; macOS 13 is configured, not runtime-tested. Intel/universal, quarantined clean-machine Gatekeeper and full spoken VoiceOver remain unverified. Default packaging is ad hoc, not Developer ID/notarized. |
+
+**DOCUMENTATION READY** requires zero publication findings and reviewed Markdown/links/diff. **RELEASE READY is not established.** Require complete hosted CI on the exact final commit (all 16 primary GUI cases, sequence checks and diagnostics), verified matching assets and review/resolution of applicable remaining gates before tagging. See [CI](CI.md), [release process](RELEASING.md) and the [disposable-environment verification plan](UNINSTALL_FOCUSED_VALIDATION.md).
+
+This documentation-only pass performs no app build/package generation, application launch, destructive test, manager mutation, process termination, cache clearing or privileged-helper activation. It does not validate earlier local packages as v1.1.0 artifacts.
+
+## Historical verification log — v1.0.0 development builds
+
+All sections below retain their original build identifiers, counts and pass-specific claims. Headings such as “current”, “latest” and “blocked” refer to the named historical pass, not the v1.1.0 documentation candidate. Later source/audit reports and the current summary above take precedence for current behavior; these records are not rewritten as newer tests. Earlier statements excluding any helper/elevation predate the separate MacPorts implementation.
 
 ## Build107 — current verification
 
