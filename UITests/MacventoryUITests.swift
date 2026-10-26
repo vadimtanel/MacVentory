@@ -300,7 +300,9 @@ final class MacventoryUITests: XCTestCase {
         let text = table.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", name, name)).firstMatch
         _ = try XCTUnwrap(text.exists && text.identifier.hasPrefix("inventory.name.") ? text : nil,
                           "Selection stage 2: identify the selected installation by its stable ID", file: file, line: line)
-        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: text.identifier).firstMatch
+        let row = table.children(matching: .outlineRow).containing(NSPredicate(
+            format: "elementType == %@ AND identifier == %@",
+            NSNumber(value: XCUIElement.ElementType.staticText.rawValue), text.identifier)).element
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: row)
         let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
         let title = details.staticTexts["inventory.details.title"]
@@ -360,7 +362,9 @@ final class MacventoryUITests: XCTestCase {
                           "Selection stage 2: resolve one identified installation name in the native table", file: file, line: line)
         let itemID = String(text.identifier.dropFirst("inventory.name.".count))
         let token = QASelectionDiagnostics.token(itemID)
-        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: text.identifier).firstMatch
+        let row = table.children(matching: .outlineRow).containing(NSPredicate(
+            format: "elementType == %@ AND identifier == %@",
+            NSNumber(value: XCUIElement.ElementType.staticText.rawValue), text.identifier)).element
         let viewport = inventoryViewport(table, in: app)
         _ = try XCTUnwrap(row.exists && viewport.exists ? row : nil, "Selection stage 2: exact native row and viewport must exist", file: file, line: line)
         let frame = row.frame
