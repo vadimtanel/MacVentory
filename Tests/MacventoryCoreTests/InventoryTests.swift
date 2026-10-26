@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import MacventoryCore
 
@@ -25,6 +26,102 @@ struct Sandbox {
         return root.appendingPathComponent(relative).path
     }
     func clean() { try? FileManager.default.removeItem(at: root) }
+}
+
+/// A compiled, test-owned process: no shell, installed manager or receipt dependency.
+private struct NativeProcessFixture: Sendable {
+    let executable: URL
+    var started: URL { URL(fileURLWithPath: executable.path + ".started") }
+    var command: InventoryCommand { .managerVersion(executable: executable.path) }
+    private static func tool(_ path: String, _ arguments: [String], environment: [String: String]) throws -> String {
+        let process = Process(), output = Pipe()
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        let context = "Native fixture tool \(path) \(arguments); DEVELOPER_DIR=\(environment["DEVELOPER_DIR"] ?? "<xcode-select>"); SDKROOT=\(environment["SDKROOT"] ?? "<resolve macosx>"); TOOLCHAINS=<unset> (lookup: default)"
+        do { try process.run() }
+        catch { throw ScanError.process("\(context): launch failed: \(error)") }
+        try output.fileHandleForWriting.close()
+        // Drain while running so compiler diagnostics cannot fill a pipe and deadlock.
+        let diagnostics = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw ScanError.process("\(context): exit \(process.terminationStatus)\n\(diagnostics)")
+        }
+        return diagnostics.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func compilerEnvironment(_ inherited: [String: String]) throws -> [String: String] {
+        // Hosted XCTest omits DEVELOPER_DIR but supplies its Xcode framework paths.
+        // Use those only to identify that Xcode; never inject its test libraries into tools.
+        let hostDeveloper = inherited["DYLD_FRAMEWORK_PATH"]?.split(separator: ":").compactMap { path -> String? in
+            let suffix = "/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+            guard path.hasSuffix(suffix) else { return nil }
+            return String(path.dropLast(suffix.count)) + "/Contents/Developer"
+        }.first
+        // An allowlist also excludes stale SDKROOT/TOOLCHAINS, DYLD_* and __XPC_DYLD_*.
+        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"]
+        let selected = try inherited["DEVELOPER_DIR"] ?? hostDeveloper ?? tool("/usr/bin/xcode-select", ["-p"], environment: environment)
+        var developer = URL(fileURLWithPath: selected)
+        if developer.pathExtension == "app" { developer.appendPathComponent("Contents/Developer") }
+        developer = developer.resolvingSymlinksInPath().standardizedFileURL
+        environment["DEVELOPER_DIR"] = developer.path
+        let sdk = try tool("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"], environment: environment)
+        let compiler = try tool("/usr/bin/xcrun", ["--sdk", "macosx", "--toolchain", "default", "--find", "clang"], environment: environment)
+        let sdkURL = URL(fileURLWithPath: sdk).resolvingSymlinksInPath()
+        let compilerURL = URL(fileURLWithPath: compiler).resolvingSymlinksInPath()
+        guard sdkURL.path.hasPrefix(developer.path + "/"), compilerURL.path.hasPrefix(developer.path + "/"),
+              FileManager.default.fileExists(atPath: sdkURL.appendingPathComponent("usr/include/stdio.h").path),
+              FileManager.default.isExecutableFile(atPath: compilerURL.path) else {
+            throw ScanError.process("Native fixture resolved inconsistent tools: developer=\(developer.path), compiler=\(compiler), SDK=\(sdk)")
+        }
+        environment["SDKROOT"] = sdkURL.path
+        environment["CC"] = compilerURL.path
+        return environment
+    }
+    init(_ box: Sandbox, slow: Bool = false, compilerEnvironment inherited: [String: String] = ProcessInfo.processInfo.environment) throws {
+        let directory = box.root.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        executable = directory.appendingPathComponent("nix")
+        let source = directory.appendingPathComponent("fixture.c")
+        try #"""
+        #include <stdio.h>
+        #include <unistd.h>
+        #include <limits.h>
+        int main(int argc, char **argv) {
+            char marker[PATH_MAX], pending[PATH_MAX];
+            snprintf(marker, sizeof(marker), "%s.started", argv[0]);
+            snprintf(pending, sizeof(pending), "%s.starting", argv[0]);
+            FILE *file = fopen(pending, "w");
+            if (!file) return 2;
+            fprintf(file, "%ld", (long)getpid()); fclose(file);
+            rename(pending, marker);
+            if (FIXTURE_SLOW) sleep(30);
+            return write(STDOUT_FILENO, "fixture\n", 8) == 8 ? 0 : 3;
+        }
+        """#.write(to: source, atomically: true, encoding: .utf8)
+        let environment = try Self.compilerEnvironment(inherited)
+        let compiler = try #require(environment["CC"]), sdk = try #require(environment["SDKROOT"])
+        print("Native fixture tools: DEVELOPER_DIR=\(environment["DEVELOPER_DIR"] ?? "<unset>"), clang=\(compiler), SDKROOT=\(sdk), TOOLCHAINS=<unset> (lookup: default)")
+        _ = try Self.tool(compiler, ["-isysroot", sdk, source.path,
+            "-DFIXTURE_SLOW=" + (slow ? "1" : "0"), "-o", executable.path], environment: environment)
+    }
+    func requireStoppedIfStarted() async throws {
+        guard FileManager.default.fileExists(atPath: started.path) else { return }
+        let pid = try #require(Int32(String(contentsOf: started, encoding: .utf8)))
+        // Signal zero only observes this fixture PID; it does not send a signal.
+        for _ in 0..<100 {
+            if Darwin.kill(pid, 0) == -1 && errno == ESRCH { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("The test-created child must be gone after timeout/cancellation")
+    }
 }
 
 struct StubRunner: CommandRunning {
@@ -199,7 +296,7 @@ struct ScannerTests {
         let absent = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
         #expect(absent.report.state == .notInstalled)
         try FileManager.default.createDirectory(at: box.root.appendingPathComponent("Cellar"), withIntermediateDirectories: true)
-        let empty = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path]).scan()
+        let empty = try await HomebrewScanner(source: .homebrewFormula, prefixes: [box.root.path], runner: StubRunner(outputs: ["list --formula --versions": Data()])).scan()
         #expect(empty.report.state == .empty)
     }
     @Test func malformedNativeBundleDoesNotHideValidApps() async throws {
@@ -208,7 +305,8 @@ struct ScannerTests {
         try box.write("Broken.app/Contents/Info.plist", "not a plist")
         let result = try await NativeScanner(roots: [box.root.path]).scan()
         #expect(result.report.state == .failed)
-        #expect(result.items.count == 1)
+        #expect(result.items.count == 2)
+        #expect(result.items.contains { $0.name == "Broken" && $0.installationHealth.status == .attention })
     }
     @Test func missingAdditionalProvidersAreNotInstalled() async throws {
         let root = "/private/tmp/macventory-missing-" + UUID().uuidString
@@ -244,6 +342,21 @@ struct ScannerTests {
         #expect(orphan.first?.path == nil)
         #expect(orphan.first?.kind == .package)
     }
+    @Test func caskroomBundleFallbackKeepsApplicationPath() throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let prefix = "Caskroom/fallback-app"
+        let path = try box.app(prefix + "/1.0.0/Fallback.app", id: "org.example.fallback", name: "Fallback Display")
+        try box.write(prefix + "/.metadata/INSTALL_RECEIPT.json", "{\"time\":1700000000,\"source\":{\"version\":\"1.0.0\"}}")
+
+        let items = try HomebrewScanner.cask(box.root.appendingPathComponent(prefix).path)
+
+        #expect(items.count == 1)
+        #expect(items.first?.name == "Fallback Display")
+        #expect(items.first?.path == FileSystem.canonical(path))
+        #expect(items.first?.kind == .app)
+        #expect(items.first?.primarySource == .homebrewCask)
+        #expect(items.first?.attributes["Payload"] == "Caskroom application bundle")
+    }
     @Test func appStoreEmptyWithoutReceipts() async throws {
         let box = try Sandbox(); defer { box.clean() }
         _ = try box.app()
@@ -274,7 +387,9 @@ struct ScannerTests {
         #expect(throws: (any Error).self) { try NixScanner.parse(Data("{\"invalid\":42}".utf8)) }
         #expect(throws: (any Error).self) { try NixScanner.parse(Data("not json".utf8)) }
         let absent = try NixScanner.parse(Data("{\"elements\":{\"hello\":{\"storePaths\":[\"/nix/store/absent-test\"]}}}".utf8))
-        #expect(absent.isEmpty)
+        #expect(absent.count == 1)
+        #expect(absent.first?.installationHealth.status == .attention)
+        #expect(absent.first?.health?.registration == .installed)
     }
     @Test func keyValuesEscapesNestingAndErrors() throws {
         let value = try KeyValues.parse("// Comment\n\"root\" { \"name\" \"Space Ω\" \"nested\" { \"x\" \"y\" } }")
@@ -397,14 +512,89 @@ struct InfrastructureTests {
             #expect(!arguments.contains { ["uninstall", "install", "update", "upgrade", "remove", "sudo"].contains($0) })
         }
     }
-    @Test func processOutputLimitAndTimeoutAreEnforced() async {
-        await #expect(throws: (any Error).self) { try await ProcessRunner(outputLimit: 1).run(.receipts) }
-        await #expect(throws: (any Error).self) { try await ProcessRunner(timeout: .zero).run(.receipts) }
+    @Test(arguments: [false, true]) func nativeFixtureCompilesWithConflictingHostEnvironment(explicitDeveloper: Bool) async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let baseline = try NativeProcessFixture.compilerEnvironment(ProcessInfo.processInfo.environment)
+        let selected = try #require(baseline["DEVELOPER_DIR"])
+        // Model a hosted Xcode identity using a test-owned alias to the installed tools.
+        let contents = box.root.appendingPathComponent("FixtureXcode.app/Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let developer = contents.appendingPathComponent("Developer")
+        try FileManager.default.createSymbolicLink(atPath: developer.path, withDestinationPath: selected)
+        var inherited = ["SDKROOT": box.root.appendingPathComponent("Missing.sdk").path,
+            "TOOLCHAINS": "missing-toolchain", "CC": "/missing/clang",
+            "DYLD_FRAMEWORK_PATH": developer.path + "/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+            "DYLD_LIBRARY_PATH": "/missing/libraries", "DYLD_INSERT_LIBRARIES": "/missing/injection.dylib",
+            "__XPC_DYLD_FRAMEWORK_PATH": "/missing/frameworks"]
+        if explicitDeveloper {
+            inherited["DEVELOPER_DIR"] = developer.path
+            inherited["DYLD_FRAMEWORK_PATH"] = box.root.appendingPathComponent("UnavailableXcode.app").path + "/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+        }
+        let sanitized = try NativeProcessFixture.compilerEnvironment(inherited)
+        #expect(sanitized == baseline)
+        let fixture = try NativeProcessFixture(box, compilerEnvironment: inherited)
+        #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+        if explicitDeveloper {
+            inherited["DEVELOPER_DIR"] = box.root.appendingPathComponent("MissingDeveloper").path
+            do {
+                _ = try NativeProcessFixture.compilerEnvironment(inherited)
+                Issue.record("An invalid explicit developer directory must fail, not silently select another Xcode")
+            } catch ScanError.process(let diagnostic) {
+                #expect(diagnostic.contains("/usr/bin/xcrun") && diagnostic.contains("DEVELOPER_DIR=") && diagnostic.contains("exit "))
+            }
+        }
     }
-    @Test func canceledProcessDoesNotContinue() async {
-        let task = Task { try await ProcessRunner().run(.receipts) }
+    @Test func processOutputLimitAndTimeoutAreEnforced() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box)
+        for timeout: Duration in [.zero, .seconds(-1), .nanoseconds(1)] {
+            do { _ = try await ProcessRunner(timeout: timeout).run(fixture.command); Issue.record("Expired timeout succeeded") }
+            catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.started.path))
+        #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+        do { _ = try await ProcessRunner(outputLimit: 1).run(fixture.command); Issue.record("Output limit succeeded") }
+        catch ScanError.limit {} catch { Issue.record("Expected ScanError.limit, got \(error)") }
+        let slow = try NativeProcessFixture(box, slow: true)
+        do { _ = try await ProcessRunner(timeout: .milliseconds(100)).run(slow.command); Issue.record("Slow fixture exceeded deadline") }
+        catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+        try await slow.requireStoppedIfStarted()
+    }
+    @Test func canceledProcessDoesNotContinue() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box, slow: true)
+        let task = Task { try await ProcessRunner().run(fixture.command) }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
+        try await fixture.requireStoppedIfStarted()
+    }
+    @Test func processTimeoutIsDeterministicUnderConcurrency() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<64 {
+                group.addTask { () async throws -> Void in
+                    for timeout: Duration in [.zero, .seconds(-1), .nanoseconds(1)] {
+                        do { _ = try await ProcessRunner(timeout: timeout).run(fixture.command); Issue.record("Concurrent expired timeout succeeded") }
+                        catch ScanError.timeout {} catch { Issue.record("Expected ScanError.timeout, got \(error)") }
+                    }
+                    #expect(try await ProcessRunner(timeout: .seconds(5)).run(fixture.command) == Data("fixture\n".utf8))
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
+    @Test func cancelingStartedFixtureStopsChild() async throws {
+        let box = try Sandbox(); defer { box.clean() }
+        let fixture = try NativeProcessFixture(box, slow: true)
+        let task = Task { try await ProcessRunner().run(fixture.command) }
+        for _ in 0..<500 where !FileManager.default.fileExists(atPath: fixture.started.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        task.cancel()
+        #expect(FileManager.default.fileExists(atPath: fixture.started.path))
+        await #expect(throws: CancellationError.self) { try await task.value }
+        try await fixture.requireStoppedIfStarted()
     }
     @Test func canceledScanReportsCancellationAndKeepsOldData() async {
         let old = SoftwareItem(name: "Old", source: .nix, path: "/nix/store/old")

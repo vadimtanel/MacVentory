@@ -16,6 +16,29 @@ private actor WorkflowRecorder: ManagementExecuting {
     }
 }
 
+/// Synchronizes the cancellation point; no scheduler-dependent millisecond race.
+private actor CancellableWorkflow: ManagementExecuting {
+    private var started = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var operationWaiter: CheckedContinuation<ManagementStepResult, any Error>?
+    func validate(_ request: ManagementRequest) {}
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+    func perform(_ operation: ManagementOperation, request: ManagementRequest) async throws -> ManagementStepResult {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                operationWaiter = continuation; started = true
+                startWaiter?.resume(); startWaiter = nil
+            }
+        } onCancel: { Task { await self.cancel() } }
+    }
+    private func cancel() {
+        operationWaiter?.resume(throwing: CancellationError()); operationWaiter = nil
+    }
+}
+
 @Suite("Unified management lifecycle and ordering")
 struct ManagementWorkflowTests {
     @MainActor @Test func stalledNativeCallbackTimesOutAndLateCallbacksCannotRepeatCompletion() async throws {
@@ -75,9 +98,9 @@ struct ManagementWorkflowTests {
         #expect(await recorder.performed.isEmpty)
     }
     @Test func cancellationDuringAwaitCannotExecuteNextStepOrBeReportedAsSuccess() async throws {
-        let recorder = WorkflowRecorder(), session = ManagementSession(executor: recorder, simulated: true)
+        let recorder = CancellableWorkflow(), session = ManagementSession(executor: recorder, simulated: true)
         let task = Task { try await session.confirm(request(Set(ManagementOperation.allCases)), acknowledged: true) }
-        try await Task.sleep(for: .milliseconds(2)); task.cancel()
+        await recorder.waitUntilStarted(); task.cancel()
         let result = try await task.value
         #expect(result.title == "Operation cancelled.")
         #expect(result.steps.contains { $0.status == .cancelled })
@@ -101,7 +124,8 @@ struct ManagementWorkflowTests {
         let simulated = ManagementResult(steps: [.init(.uninstall, .completed, "Mock only")], simulated: true)
         #expect(simulated.explanation.contains("No application, process or data was changed"))
         let uninstall = ManagementResult(steps: [.init(.uninstall, .completed, "Confirmed")], simulated: false)
-        #expect(uninstall.explanation == "The reviewed application was removed. Refresh the inventory to verify its remaining state.")
+        #expect(uninstall.explanation == "Confirmed")
+        #expect(!uninstall.explanation.contains("application was removed"))
     }
     @Test func selectionValidationRejectsMissingTargetsAndEmptyCleanup() throws {
         #expect(throws: (any Error).self) { try ManagementValidation.validateSelection(request([.forceQuit])) }

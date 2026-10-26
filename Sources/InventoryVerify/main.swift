@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Darwin
 import MacventoryCore
 
 @main
@@ -42,14 +43,19 @@ struct Verify {
             var filter = InventoryFilter(); filter.search = "Example"; filter.showSystem = true
             let clock = ContinuousClock()
             var durations: [Double] = []
-            for _ in 0..<25 {
-                let start = clock.now
-                let result = InventorySort.sorted(dataset.filter { filter.matches($0, configuration: configuration) })
-                guard result.count == 1000 else { throw ScanError.malformed("Benchmark filtering unexpectedly dropped rows") }
-                let duration = start.duration(to: clock.now).components
-                durations.append(Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15)
+            for key in [InventorySortKey.name, .health] {
+                durations = []
+                for _ in 0..<25 {
+                    let start = clock.now
+                    let result = InventorySort.sorted(dataset.filter { filter.matches($0, configuration: configuration) }, by: key)
+                    guard result.count == 1000 else { throw ScanError.malformed("Benchmark filtering unexpectedly dropped rows") }
+                    let duration = start.duration(to: clock.now).components
+                    durations.append(Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15)
+                }
+                print("Synthetic 1000-row cached filter + \(key.rawValue) sort, 25 runs: mean \(durations.reduce(0, +) / Double(durations.count)) ms; max \(durations.max() ?? 0) ms")
             }
-            print("Synthetic 1000-row cached filter + name sort, 25 runs: mean \(durations.reduce(0, +) / Double(durations.count)) ms; max \(durations.max() ?? 0) ms")
+            var usage = rusage()
+            if getrusage(RUSAGE_SELF, &usage) == 0 { print("Diagnostic peak resident memory: \(usage.ru_maxrss) bytes") }
         }
     }
 }

@@ -1,7 +1,10 @@
 import Foundation
 
 public enum ManagementOperation: String, CaseIterable, Sendable { case forceQuit = "Force Quit", clearData = "Clear App Data", uninstall = "Uninstall" }
-public enum ManagementStepStatus: String, Sendable { case completed, partial, failed, skipped, cancelled }
+public enum ManagementStepStatus: String, Sendable {
+    case completed, partial, failed, skipped, cancelled, waitingForUser, unknown
+    public var title: String { self == .waitingForUser ? "Waiting for User" : rawValue.capitalized }
+}
 public struct ManagementStepResult: Sendable, Identifiable {
     public var id: ManagementOperation { operation }
     public var operation: ManagementOperation
@@ -14,11 +17,27 @@ public struct ManagementResult: Sendable {
     public var steps: [ManagementStepResult]
     public var simulated: Bool
     public init(steps: [ManagementStepResult], simulated: Bool) { self.steps = steps; self.simulated = simulated }
+    public var canVerifyInteractiveRemoval: Bool {
+        steps.contains { $0.operation == .uninstall && [.waitingForUser, .partial, .unknown].contains($0.status) }
+    }
+    public func verifyingInteractiveRemoval(_ outcome: UninstallOutcome) -> ManagementResult {
+        guard canVerifyInteractiveRemoval else { return self }
+        let status: ManagementStepStatus
+        switch outcome {
+        case .verifiedRemoved, .appBundleRemoved, .packageRegistrationRemoved: status = .completed
+        case .waitingForUser: status = .waitingForUser
+        case .partialRemoval: status = .partial
+        default: status = .unknown
+        }
+        return .init(steps: steps.map { $0.operation == .uninstall ? .init(.uninstall, status, outcome.completionMessage) : $0 }, simulated: simulated)
+    }
     public var title: String {
         let items = steps.flatMap(\.cleanupResults)
         if steps.count == 1, !items.isEmpty, items.allSatisfy({ $0.status == .alreadyRemoved }) { return "Already Removed" }
         if steps.allSatisfy({ $0.status == .completed }), !steps.isEmpty { return "Operation completed." }
         if steps.contains(where: { $0.status == .completed || $0.status == .partial }) { return "Partially completed." }
+        if steps.contains(where: { $0.status == .waitingForUser }) { return "Waiting for User" }
+        if steps.contains(where: { $0.status == .unknown }) { return "Outcome Unverified" }
         if steps.contains(where: { $0.status == .cancelled }) { return "Operation cancelled." }
         return "Operation failed."
     }
@@ -29,7 +48,7 @@ public struct ManagementResult: Sendable {
             switch steps[0].operation {
             case .forceQuit: return "The application process exited. Background helpers may still be running."
             case .clearData: return "The selected items were moved to Trash."
-            case .uninstall: return "The reviewed application was removed. Refresh the inventory to verify its remaining state."
+            case .uninstall: return steps[0].detail
             }
         }
         if steps.allSatisfy({ $0.status == .completed }) {
@@ -116,6 +135,9 @@ public struct SimulatedManagementExecutor: ManagementExecuting {
                 if partialCleanup && candidate.id == request.candidates.last?.id { throw AppDataAccessError(path: candidate.path, action: "checking simulated write access") }
             }, recycle: { _ in })
             return .init(operation, outcome.stepStatus, outcome.summary, cleanupResults: outcome.results)
+        }
+        if operation == .uninstall, request.uninstallPlan?.executionLevel == .interactive {
+            return .init(operation, .waitingForUser, "Simulated interactive handoff. " + UninstallOutcome.waitingForUser.completionMessage)
         }
         return .init(operation, .completed, "Simulated \(operation.rawValue); nothing changed.")
     }

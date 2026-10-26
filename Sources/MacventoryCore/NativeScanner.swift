@@ -19,10 +19,17 @@ public struct NativeScanner: SoftwareScanner {
             if !allowExternal && path.hasPrefix("/Volumes/") { continue }
             guard visited.insert(path).inserted else { continue }
             if path.lowercased().hasSuffix(".app") {
-                do { items.append(try Self.item(at: path)) } catch { errors.append("Cannot read bundle: \(path)") }
+                do { items.append(try Self.item(at: path)) } catch {
+                    var item = SoftwareItem(name: URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent, path: path, evidence: Evidence("Incomplete bundle inspection", confidence: .unknown))
+                    let observation = ArtifactObservation.inspect(path + "/Contents/Info.plist")
+                    item.health = .init(observation.presence == .inaccessible ? .unverified : .attention, "Required bundle metadata is missing or unreadable: " + error.localizedDescription, artifacts: [observation])
+                    items.append(item); errors.append("Cannot read bundle: \(path)")
+                }
                 continue
             }
-            guard FileSystem.exists(path) else { continue }
+            let rootPresence = ArtifactObservation.inspect(path).presence
+            if rootPresence == .inaccessible { errors.append("Access denied: " + path); continue }
+            guard rootPresence == .present else { continue }
             do {
                 for url in try FileSystem.children(path) {
                     entries += 1
@@ -31,7 +38,12 @@ public struct NativeScanner: SoftwareScanner {
                     // macOS reports some symlinks (including Safari) as aliases too.
                     // Resolve actual symlinks before attempting Finder bookmark/alias resolution.
                     if values.isSymbolicLink == true {
-                        if url.pathExtension.lowercased() == "app" { linkedTargets.insert(FileSystem.canonical(url.path)); queue.append((FileSystem.canonical(url.path), depth + 1)) }
+                        if url.pathExtension.lowercased() == "app", ArtifactObservation.inspect(url.path).presence == .brokenLink {
+                            var item = SoftwareItem(name: url.deletingPathExtension().lastPathComponent, kind: .package, evidence: Evidence("Broken application symlink"))
+                            item.id = "link:" + url.path; item.attributes["Broken link"] = url.path
+                            item.health = .init(.attention, "Broken application symbolic link; target is absent. Review ownership before repair.", artifacts: [.init(url.path, .brokenLink)])
+                            items.append(item)
+                        } else if url.pathExtension.lowercased() == "app" { linkedTargets.insert(FileSystem.canonical(url.path)); queue.append((FileSystem.canonical(url.path), depth + 1)) }
                     } else if values.isAliasFile == true {
                         if let resolved = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]), resolved.pathExtension.lowercased() == "app" { linkedTargets.insert(FileSystem.canonical(resolved.path)); queue.append((FileSystem.canonical(resolved.path), depth + 1)) }
                     } else if values.isDirectory == true {
@@ -59,7 +71,9 @@ public struct NativeScanner: SoftwareScanner {
         item.vendor = nil
         if let copyright = info["NSHumanReadableCopyright"] as? String { item.attributes["Copyright"] = copyright }
         item.evidence["vendor"] = Evidence("Publisher identity unavailable", confidence: .unknown, availability: .notAvailable)
-        item.isSystem = canonical.hasPrefix("/System/") || canonical.hasPrefix("/usr/")
+        item.isSystem = ProtectionPolicy.protectedPath(canonical)
+        if let bundleAttributes = try? FileManager.default.attributesOfItem(atPath: canonical),
+           (bundleAttributes[.immutable] as? Bool) == true { item.isSystem = true }
         item.evidence["version"] = Evidence("CFBundleShortVersionString / CFBundleVersion", availability: item.version == nil ? .notAvailable : .available)
         item.evidence["name"] = Evidence("Bundle Info.plist")
         item.evidence["sizeBytes"] = Evidence("Filesystem", availability: .calculating)
@@ -78,6 +92,11 @@ public struct NativeScanner: SoftwareScanner {
             item.sources.append(.init(.appStore, Evidence("Local App Store receipt", confidence: .inferred, explanation: "Receipt present; signature and purchase not authenticated")))
             item.primarySource = .appStore
         }
+        item.health = InstallationHealthClassifier.classify(item)
+        if let executable = info["CFBundleExecutable"] as? String, !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".." {
+            let binary = ArtifactObservation.inspect(canonical + "/Contents/MacOS/" + executable)
+            if binary.presence != .present || !FileManager.default.isExecutableFile(atPath: binary.path) { item.health = .init(binary.presence == .inaccessible ? .unverified : .attention, "Bundle executable is missing, broken or inaccessible.", artifacts: [binary]) }
+        } else { item.health = .init(.unverified, "Required bundle executable metadata is missing.", artifacts: [ArtifactObservation(canonical, .present)]) }
         return item
     }
 }

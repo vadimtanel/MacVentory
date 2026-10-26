@@ -4,6 +4,7 @@ public enum InventoryCategorySelection {
     public static func key(_ view: LibraryView) -> String {
         switch view {
         case .all: "view:all"; case .apps: "view:apps"; case .packages: "view:packages"
+        case .attention: "view:attention"
         case .unused: "view:unused"; case .large: "view:large"; case .recent: "view:recent"; case .unknown: "view:unknown"
         }
     }

@@ -26,19 +26,27 @@ public enum InventoryMerger {
             if existing.lastOpenedAt == nil { existing.lastOpenedAt = other.lastOpenedAt; existing.evidence["lastOpenedAt"] = other.evidence["lastOpenedAt"] }
             if existing.sizeBytes == nil { existing.sizeBytes = other.sizeBytes; existing.evidence["sizeBytes"] = other.evidence["sizeBytes"] }
             existing.stale = existing.stale || other.stale
+            let managerSources: Set<InstallSource> = [.homebrewCask, .homebrewFormula, .macPorts, .nix, .steam, .setapp, .toolbox]
+            if managerSources.contains(existing.primarySource), existing.primarySource == other.primarySource {
+                let first = [existing.packageID, existing.attributes["Homebrew executable"], existing.attributes["Prefix"], existing.attributes["Nix profile"]].compactMap { $0 }.joined(separator: "|")
+                let second = [other.packageID, other.attributes["Homebrew executable"], other.attributes["Prefix"], other.attributes["Nix profile"]].compactMap { $0 }.joined(separator: "|")
+                if first != second { existing.attributes["Conflicting manager identities"] = [first, second].sorted().joined(separator: "\n") }
+            }
             existing.attributes.merge(other.attributes) { current, _ in current }
             for (key, value) in other.evidence where existing.evidence[key] == nil { existing.evidence[key] = value }
+            existing.health = existing.health ?? other.health
             result[id] = existing
         }
         for (id, var item) in result {
             let managers = Set(item.sources.filter { $0.evidence.confidence == .verified && [.homebrewCask, .homebrewFormula, .macPorts, .nix, .steam, .setapp, .toolbox].contains($0.source) }.map(\.source))
-            if managers.count > 1 {
+            if managers.count > 1 || item.attributes["Conflicting manager identities"] != nil {
                 item.primarySource = .unknown
                 item.sources.append(.init(.unknown, Evidence("Conflicting ownership evidence", confidence: .unknown)))
             } else if item.primarySource == .unmanaged && uncertainOwnership {
                 item.primarySource = .unknown
                 item.sources.append(.init(.unknown, Evidence("Ownership scan incomplete", confidence: .unknown, availability: .partial)))
             }
+            if item.health == nil { item.health = InstallationHealthClassifier.classify(item) }
             if item.primarySource != .unmanaged { item.sources.removeAll { $0.source == .unmanaged } }
             result[id] = item
         }
@@ -115,7 +123,8 @@ public actor InventoryService {
                 } else {
                     var retained = observations[key] ?? []
                     for index in retained.indices { retained[index].stale = true }
-                    observations[key] = InventoryMerger.merge(retained + result.items)
+                    let freshIDs = Set(result.items.map(\.id))
+                    observations[key] = retained.filter { !freshIDs.contains($0.id) } + result.items
                 }
                 await event(.report(result.report))
                 let uncertain = reports.contains { [.failed, .canceled, .unsupported].contains($0.state) }

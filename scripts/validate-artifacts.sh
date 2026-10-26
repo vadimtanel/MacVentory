@@ -5,7 +5,10 @@ cd "$(dirname "$0")/.."
 app="$PWD/build/Macventory.app"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 prefix="$PWD/artifacts/Macventory-$version-arm64"
-[[ "$(/usr/bin/lipo -archs "$app/Contents/MacOS/Macventory")" == arm64 ]]
+for executable in Macventory MacventoryPrivilegedHelper; do
+  [[ "$(/usr/bin/lipo -archs "$app/Contents/MacOS/$executable")" == arm64 ]]
+done
+/usr/bin/codesign --verify --strict --verbose=2 "$app/Contents/MacOS/MacventoryPrivilegedHelper"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 /usr/bin/hdiutil verify "$prefix.dmg"
 (cd artifacts && /usr/bin/shasum -a 256 -c "Macventory-$version-arm64.sha256")
@@ -19,6 +22,12 @@ import zipfile
 
 root = Path.cwd()
 app = root / 'build/Macventory.app'
+# Signing/integrity alone accepts binaries carrying private compiler paths.
+# Inspect both shipped executables, independently of the stripping implementation.
+for name in ('Macventory', 'MacventoryPrivilegedHelper'):
+    data = (app / 'Contents/MacOS' / name).read_bytes()
+    if any(marker in data for marker in (b'/Users/', b'/var/folders/', str(root).encode())):
+        raise SystemExit(f'Private build path remains in packaged executable: {name}')
 expected = plistlib.loads((root / 'Resources/Info.plist').read_bytes())
 actual = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
 for key in ('CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion'):

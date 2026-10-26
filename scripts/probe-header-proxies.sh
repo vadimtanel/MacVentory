@@ -49,17 +49,26 @@ for mode in ('keypath', 'custom', 'customized', 'inventory'):
         try:
             log.write(f'DYLD_FRAMEWORK_PATH={sys.argv[2]}\n')
             log.flush()
-            result = subprocess.run([str(root / 'header-probe'), '--ui-testing', '--case=' + mode], env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=45)
+            arguments = [str(root / 'header-probe'), '--ui-testing', '--case=' + mode]
+            if mode == 'inventory':
+                arguments.append('--ui-testing-header-sorts')  # Same independent two-row ordering fixture as XCUITest.
+            result = subprocess.run(arguments, env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=45)
             status = result.returncode
         except subprocess.TimeoutExpired:
             status = 'timeout'
     # A zero exit alone is insufficient: require main() and all six phases of
-    # six actual header measurements. A dyld abort cannot masquerade as evidence.
+    # all actual header measurements. A dyld abort cannot masquerade as evidence.
     lines = (root / f'{mode}.log').read_text().splitlines()
     measurements = [json.loads(line) for line in lines if line.startswith('{')]
+    expected_columns = {'Name', 'Version', 'Source', 'Size', 'Installed', 'Last Opened'}
+    if mode == 'inventory':
+        expected_columns.add('Status')
+    phases = {value['phase'] for value in measurements}
     complete = (any(line.startswith(f'case={mode} OS=') for line in lines)
                 and sum(line.startswith('PHASE ') for line in lines) == 6
-                and len(measurements) == 36
+                and len(phases) == 6
+                and len(measurements) == 6 * len(expected_columns)
+                and all({value['column'] for value in measurements if value['phase'] == phase} == expected_columns for phase in phases)
                 and all('AXHitClass' in value and 'AXSortDirection' in value for value in measurements))
     if status != 0 or not complete:
         failures.append((mode, status, 'complete measurements=' + str(complete)))
