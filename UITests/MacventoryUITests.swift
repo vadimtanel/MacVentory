@@ -30,18 +30,40 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
     _ = try XCTUnwrap(arguments.contains("--ui-testing") ? app : nil, "GUI tests require synthetic inventory and removal")
     app.launchArguments = arguments
     if let testCase, arguments.contains("--qa-execution-levels") {
-        let trace = FileManager.default.temporaryDirectory.appendingPathComponent("MacventorySelection-\(UUID().uuidString).jsonl")
-        app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-file", trace.path]
+        let nonce = UUID().uuidString
+        let directory = try QATraceHandoff.Directory.create(nonce)
+        app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce]
+        let controller = try JSONSerialization.data(withJSONObject: QATraceHandoff.processPaths.merging(
+            ["destination": directory.url.path]) { _, new in new }, options: [.sortedKeys])
         testCase.addTeardownBlock {
             XCTContext.runActivity(named: "QA-only native selection observations") { activity in
-                guard let data = try? Data(contentsOf: trace), !data.isEmpty else {
-                    XCTFail("The requested native selection trace was not captured")
-                    return
+                func attach(_ data: Data, _ name: String) {
+                    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                    attachment.name = name
+                    attachment.lifetime = .keepAlways
+                    activity.add(attachment)
                 }
-                let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
-                attachment.name = "native-selection.jsonl"
-                attachment.lifetime = .keepAlways
-                activity.add(attachment)
+                attach(controller, "selection-controller.json")
+                do {
+                    _ = try QATraceHandoff.Directory(nonce) // Detect a changed/invalid directory independently of the retained descriptor.
+                    let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
+                    attach(startup, "selection-startup.jsonl")
+                    let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
+                        try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+                    }
+                    XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
+                                  "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
+                }
+                catch { XCTFail("Trace bootstrap receipt unavailable at \(directory.url.path): \(error.localizedDescription). App bootstrap may not have run; inspect launch/console evidence.") }
+                do {
+                    let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
+                    attach(data, "native-selection.jsonl")
+                    let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
+                        (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
+                    }
+                    XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
+                                  "Trace created but native observer was not created/attached; inspect startup and trace stages")
+                } catch { XCTFail("Native trace read failed at \(directory.url.path): \(error.localizedDescription). Inspect selection-startup.jsonl for app creation/validation failures.") }
             }
         }
     }

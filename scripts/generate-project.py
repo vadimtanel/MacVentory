@@ -52,6 +52,9 @@ for name, directory, product_type, extension in [
         reference = add(str(path.relative_to(ROOT)), {"isa": "PBXFileReference", "lastKnownFileType": "sourcecode.swift", "path": str(path.relative_to(ROOT)), "sourceTree": "SOURCE_ROOT"})
         source_refs.append(reference)
         files.append(build_file(name, reference))
+    if name == "MacventoryUITests":
+        # Compile the same private handoff protocol in both processes; no app/framework load in the runner.
+        files.append(build_file(name, ref("Sources/Macventory/SelectionDiagnostics.swift")))
     product = add(name + "Product", {"isa": "PBXFileReference", "explicitFileType": "wrapper.framework" if extension == "framework" else "wrapper.application" if extension == "app" else "compiled.mach-o.executable" if extension == "" else "wrapper.cfbundle", "path": name + ("." + extension if extension else ""), "sourceTree": "BUILT_PRODUCTS_DIR", "includeInIndex": 0})
     products.append(product)
     phases = [add(name + "Sources", {"isa": "PBXSourcesBuildPhase", "buildActionMask": 2147483647, "files": files, "runOnlyForDeploymentPostprocessing": 0})]

@@ -3,6 +3,88 @@ import SwiftUI
 import CryptoKit
 import Darwin
 
+/// Shared by the app and XCTest runner. Only an opaque nonce crosses the launch boundary.
+/// A fixed OS temporary root avoids either process's container/TMPDIR. Each run owns a
+/// fresh 0700 directory; descriptor-relative operations never follow a supplied link.
+enum QATraceHandoff {
+    static let traceName = "native-selection.jsonl"
+    static let startupName = "startup.jsonl"
+    static let traceLimit = 1_048_576
+    static let startupLimit = 16_384
+    static func failure(_ operation: String, code: Int32 = errno) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [NSLocalizedDescriptionKey:
+            "\(operation): errno=\(code) (\(String(cString: strerror(code))))"])
+    }
+    static func location(_ nonce: String) throws -> URL {
+        guard UUID(uuidString: nonce)?.uuidString == nonce else { throw failure("Invalid trace nonce", code: EINVAL) }
+        return URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("MacventorySelection-\(geteuid())-\(nonce)", isDirectory: true)
+    }
+    final class Directory: Sendable {
+        let url: URL
+        private let descriptor: Int32
+        static func create(_ nonce: String) throws -> Directory {
+            let url = try location(nonce)
+            guard mkdir(url.path, 0o700) == 0 else { throw failure("Create private trace directory") }
+            return try Directory(nonce)
+        }
+        init(_ nonce: String) throws {
+            url = try location(nonce)
+            let opened = open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard opened >= 0 else { throw failure("Open private trace directory") }
+            var info = stat()
+            guard fstat(opened, &info) == 0 else {
+                let error = failure("Inspect private trace directory")
+                close(opened)
+                throw error
+            }
+            guard info.st_uid == geteuid(), info.st_mode & S_IFMT == S_IFDIR, info.st_mode & 0o777 == 0o700 else {
+                close(opened)
+                throw failure("Trace directory must be owned by this user with mode 0700", code: EACCES)
+            }
+            descriptor = opened
+        }
+        deinit { close(descriptor) }
+        func createFile(_ name: String) throws -> FileHandle {
+            guard [traceName, startupName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
+            let fd = openat(descriptor, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { throw failure("Create \(name)") }
+            return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        }
+        func read(_ name: String, limit: Int) throws -> Data {
+            guard [traceName, startupName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
+            let fd = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard fd >= 0 else { throw failure("Read \(name)") }
+            let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            defer { try? file.close() }
+            var info = stat()
+            guard fstat(fd, &info) == 0 else { throw failure("Inspect \(name)") }
+            guard info.st_uid == geteuid(), info.st_mode & S_IFMT == S_IFREG,
+                  info.st_mode & 0o777 == 0o600, info.st_nlink == 1, info.st_size <= limit else {
+                throw failure("Invalid trace file type, ownership, permissions or size: \(name)", code: EACCES)
+            }
+            let data = try file.read(upToCount: limit + 1) ?? Data()
+            guard data.count <= limit else { throw failure("Trace exceeds size bound", code: EFBIG) }
+            guard !data.isEmpty else { throw failure("Empty \(name)", code: ENODATA) }
+            return data
+        }
+    }
+    static func writeStartup(_ file: FileHandle, _ fields: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) + Data([10])
+        guard data.count <= startupLimit / 4 else { throw failure("Startup record exceeds size bound", code: EFBIG) }
+        try file.write(contentsOf: data)
+    }
+    private static func canonicalPath(_ url: URL) -> String {
+        guard let path = realpath(url.path, nil) else { return url.standardizedFileURL.path }
+        defer { free(path) }
+        return String(cString: path)
+    }
+    static var processPaths: [String: String] {
+        ["temporaryDirectory": canonicalPath(FileManager.default.temporaryDirectory),
+         "TMPDIR": ProcessInfo.processInfo.environment["TMPDIR"] ?? "unset", "sharedRoot": "/private/tmp"]
+    }
+}
+
 /// Temporary, observational diagnostics. No event replacement, responder changes or selection setters.
 @MainActor
 enum QASelectionDiagnostics {
@@ -18,39 +100,46 @@ enum QASelectionDiagnostics {
         if event == "selection.observed" { session?.state["lastObservedSelection"] = fields["value"] }
         session?.record(event, fields)
     }
-    static func start(isolated: Bool) {
-        guard session == nil, enabled(isolated: isolated) else { return }
-        let args = ProcessInfo.processInfo.arguments
-        guard let index = args.firstIndex(of: "--qa-selection-trace-file"), args.indices.contains(index + 1) else {
-            NSLog("QA selection diagnostics require an explicit temporary trace destination")
-            return
+    private static var attempted = false
+    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
+        guard !attempted, enabled(isolated: isolated, arguments: arguments) else { return }
+        attempted = true
+        var startup: FileHandle?
+        do {
+            guard let index = arguments.firstIndex(of: "--qa-selection-trace-id"), arguments.indices.contains(index + 1) else {
+                throw QATraceHandoff.failure("Missing --qa-selection-trace-id", code: EINVAL)
+            }
+            let directory = try QATraceHandoff.Directory(arguments[index + 1])
+            startup = try directory.createFile(QATraceHandoff.startupName)
+            try QATraceHandoff.writeStartup(startup!, ["stage": "bootstrap", "pid": ProcessInfo.processInfo.processIdentifier,
+                "isolated": isolated, "enabled": true, "uiTestingArgument": arguments.contains("--ui-testing"),
+                "diagnosticsArgument": arguments.contains("--qa-selection-diagnostics"), "paths": QATraceHandoff.processPaths,
+                "destination": directory.url.path])
+            session = try Session(directory: directory)
+            try QATraceHandoff.writeStartup(startup!, ["stage": "trace.ready"])
+        } catch {
+            let detail = ["stage": "initialization.failed", "error": error.localizedDescription,
+                          "domain": (error as NSError).domain, "code": String((error as NSError).code)]
+            if let startup { try? QATraceHandoff.writeStartup(startup, detail) }
+            NSLog("QA selection trace initialization failed: %@", error.localizedDescription)
         }
-        guard let created = Session(url: URL(fileURLWithPath: args[index + 1])) else {
-            NSLog("QA selection trace unavailable: require a fresh MacventorySelection-UUID.jsonl in this process temporary directory")
-            return
-        }
-        session = created
+        try? startup?.close()
     }
 
     @MainActor final class Session {
         private let file: FileHandle
         private var bytes = 0
         private var sequence = 0
+        private var writeFailure: Error?
         private var monitor: Any?
         private var observers: [NSObjectProtocol] = []
         weak var window: NSWindow?
         var state: [String: Any] = [:]
 
-        init?(url: URL) {
-            // Only a fresh, private test log in this user's temporary directory. Never follow a link.
-            let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-            guard parent == FileManager.default.temporaryDirectory.resolvingSymlinksInPath().standardizedFileURL,
-                  url.lastPathComponent.hasPrefix("MacventorySelection-"), url.pathExtension == "jsonl",
-                  UUID(uuidString: String(url.deletingPathExtension().lastPathComponent.dropFirst("MacventorySelection-".count))) != nil else { return nil }
-            let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-            guard descriptor >= 0 else { return nil }
-            file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        init(directory: QATraceHandoff.Directory) throws {
+            file = try directory.createFile(QATraceHandoff.traceName)
             record("trace.started", ["pid": ProcessInfo.processInfo.processIdentifier])
+            if let writeFailure { throw writeFailure }
         }
         func attach(_ window: NSWindow) {
             self.window = window
@@ -124,7 +213,7 @@ enum QASelectionDiagnostics {
             }
             guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]), bytes + data.count + 1 <= 1_048_576 else { return }
             do { try file.write(contentsOf: data + Data([10])); bytes += data.count + 1 }
-            catch { NSLog("QA selection trace could not append an observation") }
+            catch { writeFailure = error; NSLog("QA selection trace could not append an observation: %@", error.localizedDescription) }
         }
     }
 }
@@ -134,7 +223,7 @@ struct QASelectionObserver: NSViewRepresentable {
     let rows: [String]
     let search: String
     func makeNSView(context: Context) -> Reader {
-        QASelectionDiagnostics.start(isolated: true)
+        QASelectionDiagnostics.record("observer.created")
         return Reader()
     }
     func updateNSView(_ view: Reader, context: Context) {

@@ -60,6 +60,7 @@ final class AppModel: ObservableObject {
     init() {
         runMode = InventoryRunMode(arguments: ProcessInfo.processInfo.arguments, qaBundle: Bundle.main.object(forInfoDictionaryKey: "MacventoryQABundle") as? Bool == true)
         fixtureMode = runMode.isolated
+        QASelectionDiagnostics.start(isolated: runMode.isolated)
         qaProtected = !runMode.allowsLiveRemoval
         let managementExecutor = ManagementExecutorFactory.make(mode: runMode, failure: ProcessInfo.processInfo.arguments.contains("--qa-management-failure") ? .forceQuit : nil, partialCleanup: ProcessInfo.processInfo.arguments.contains("--qa-partial-cleanup"), missingFirst: ProcessInfo.processInfo.arguments.contains("--qa-missing-cleanup"))
         managementSession = ManagementSession(executor: managementExecutor, simulated: qaProtected)
