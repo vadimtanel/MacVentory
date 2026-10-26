@@ -1,5 +1,7 @@
 import XCTest
 import Darwin
+import AppKit
+import CoreGraphics
 
 // Read-only app-created evidence. This never selects a row or changes focus/state.
 private func selectionEvents(_ nonce: String) -> [[String: Any]] {
@@ -36,58 +38,89 @@ private func requireFixtureSidebar(_ app: XCUIApplication) throws {
 }
 
 @MainActor
-private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil) throws -> XCUIApplication {
+private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil,
+                                activateAfterLaunch: Bool = true, selectionDiagnostics: Bool = true,
+                                startupDiagnostics: Bool = false) throws -> XCUIApplication {
     let app = XCUIApplication()
     _ = try XCTUnwrap(arguments.contains("--ui-testing") ? app : nil, "GUI tests require synthetic inventory and removal")
+    if startupDiagnostics {
+        _ = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "org.vadimtanel.Macventory").isEmpty ? app : nil,
+                          "Cold-start arm requires no existing Macventory process; do not terminate a pre-existing application")
+    }
     app.launchArguments = arguments
     if let testCase, arguments.contains("--qa-execution-levels") {
         let nonce = UUID().uuidString
         let destination = try QATraceHandoff.location(nonce) // Derive only: the sandboxed runner cannot mkdir here.
-        app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce]
+        let startupNonce = UUID().uuidString
+        if selectionDiagnostics { app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce] }
+        if startupDiagnostics {
+            app.launchArguments += ["--qa-startup-diagnostics"]
+            // Keep the independent observer's nonce out of AppKit's argument domain.
+            // The original selection-trace argument transport stays identical in A/B.
+            app.launchEnvironment[QATraceHandoff.startupEnvironmentKey] = startupNonce
+        }
         testCase.addTeardownBlock {
-            XCTContext.runActivity(named: "QA-only native selection observations") { activity in
-                func attach(_ data: Data, _ name: String) {
-                    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
-                    attachment.name = name
-                    attachment.lifetime = .keepAlways
-                    activity.add(attachment)
-                }
-                var controller: [String: Any] = QATraceHandoff.processPaths
-                controller["destination"] = destination.path
-                controller["nonce"] = nonce
-                controller["pid"] = ProcessInfo.processInfo.processIdentifier
-                func failure(_ stage: String, _ error: Error) {
-                    controller[stage] = ["domain": (error as NSError).domain, "code": (error as NSError).code,
-                                         "error": error.localizedDescription]
-                    XCTFail("Trace handoff \(stage) failed: \(error.localizedDescription)")
-                }
-                do {
-                    let directory = try QATraceHandoff.Directory(nonce)
-                    controller["open"] = "success"
+            if startupDiagnostics {
+                recordStartupDiscovery(app, phase: "teardown before normal Quit")
+                XCTContext.runActivity(named: "Independent application startup lifecycle") { activity in
                     do {
-                        let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
-                        attach(startup, "selection-startup.jsonl")
-                        controller["startupRead"] = "success"
-                        let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
-                            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
-                        }
-                        XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
-                                      "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
-                    } catch { failure("startupRead", error) }
+                        let directory = try QATraceHandoff.Directory(startupNonce)
+                        let data = try directory.read(QATraceHandoff.lifecycleName, limit: QATraceHandoff.traceLimit)
+                        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                        attachment.name = "startup-lifecycle.jsonl"; attachment.lifetime = .keepAlways
+                        activity.add(attachment)
+                    } catch { XCTFail("Independent startup trace read failed: \(error)") }
+                }
+            }
+            if selectionDiagnostics {
+                XCTContext.runActivity(named: "QA-only native selection observations") { activity in
+                    func attach(_ data: Data, _ name: String) {
+                        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                        attachment.name = name
+                        attachment.lifetime = .keepAlways
+                        activity.add(attachment)
+                    }
+                    var controller: [String: Any] = QATraceHandoff.processPaths
+                    controller["destination"] = destination.path
+                    controller["nonce"] = nonce
+                    controller["pid"] = ProcessInfo.processInfo.processIdentifier
+                    func failure(_ stage: String, _ error: Error) {
+                        controller[stage] = ["domain": (error as NSError).domain, "code": (error as NSError).code,
+                                             "error": error.localizedDescription]
+                        XCTFail("Trace handoff \(stage) failed: \(error.localizedDescription)")
+                    }
                     do {
-                        let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
-                        attach(data, "native-selection.jsonl")
-                        controller["traceRead"] = "success"
-                        let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
-                            (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
-                        }
-                        XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
-                                      "Trace created but native observer was not created/attached; inspect startup and trace stages")
-                    } catch { failure("traceRead", error) }
-                } catch { failure("open", error) }
-                // Capture reader evidence even when directory open/read fails.
-                do { attach(try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys]), "selection-controller.json") }
-                catch { XCTFail("Could not serialize trace controller evidence: \(error)") }
+                        let directory = try QATraceHandoff.Directory(nonce)
+                        controller["open"] = "success"
+                        do {
+                            let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
+                            attach(startup, "selection-startup.jsonl")
+                            controller["startupRead"] = "success"
+                            let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
+                                try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+                            }
+                            XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
+                                          "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
+                        } catch { failure("startupRead", error) }
+                        do {
+                            let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
+                            attach(data, "native-selection.jsonl")
+                            controller["traceRead"] = "success"
+                            let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
+                                (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
+                            }
+                            // Startup diagnostics report their actual launch stage;
+                            // a missing window does not owe us a table observer.
+                            if !startupDiagnostics {
+                                XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
+                                              "Trace created but native observer was not created/attached; inspect startup and trace stages")
+                            }
+                        } catch { failure("traceRead", error) }
+                    } catch { failure("open", error) }
+                    // Capture reader evidence even when directory open/read fails.
+                    do { attach(try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys]), "selection-controller.json") }
+                    catch { XCTFail("Could not serialize trace controller evidence: \(error)") }
+                }
             }
             // Only this synthetic fixture receives a normal Quit, after attachment capture.
             // Its app-side termination observer owns cleanup; the read-only runner never unlinks.
@@ -97,21 +130,53 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
                 if app.state == .runningForeground { app.typeKey("q", modifierFlags: .command) }
                 XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "Synthetic fixture must quit normally for private trace cleanup")
             }
-            do {
-                _ = try QATraceHandoff.Directory(nonce)
-                XCTFail("Synthetic app did not clean up its private trace directory")
-            } catch {
-                XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
-                XCTAssertEqual((error as NSError).code, Int(ENOENT), "Trace cleanup must remove only this session directory")
+            for id in (selectionDiagnostics ? [nonce] : []) + (startupDiagnostics ? [startupNonce] : []) {
+                do {
+                    _ = try QATraceHandoff.Directory(id)
+                    XCTFail("Synthetic app did not clean up its private trace directory")
+                } catch {
+                    XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
+                    XCTAssertEqual((error as NSError).code, Int(ENOENT), "Trace cleanup must remove only this session directory")
+                }
             }
         }
     }
     app.launch()
-    app.activate()
-    _ = try XCTUnwrap(app.windows.firstMatch.waitForExistence(timeout: 10) ? app : nil)
+    if activateAfterLaunch { app.activate() }
+    let discovered = app.windows.firstMatch.waitForExistence(timeout: 10)
+    if startupDiagnostics { recordStartupDiscovery(app, phase: "window wait completed", discovered: discovered) }
+    _ = try XCTUnwrap(discovered ? app : nil,
+                      "Startup stage: XCTest must discover the real inventory window within the existing 10-second bound")
     XCTAssertEqual(app.state, .runningForeground)
     try requireFixtureSidebar(app)
     return app
+}
+
+@MainActor
+private func recordStartupDiscovery(_ app: XCUIApplication, phase: String, discovered: Bool? = nil) {
+    XCTContext.runActivity(named: "XCTest and native process discovery — " + phase) { activity in
+        let processes = NSRunningApplication.runningApplications(withBundleIdentifier: "org.vadimtanel.Macventory")
+        let pids = Set(processes.map { Int($0.processIdentifier) })
+        let windows = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .filter { pids.contains($0[kCGWindowOwnerPID as String] as? Int ?? -1) }
+            .map { value in value.filter { [kCGWindowNumber as String, kCGWindowBounds as String,
+                                           kCGWindowIsOnscreen as String, kCGWindowLayer as String].contains($0.key) } }
+        var controller: [String: Any] = ["phase": phase, "uptime": ProcessInfo.processInfo.systemUptime,
+            "xctestState": app.state.rawValue, "xctestWindowCount": app.windows.count,
+            "nativeProcesses": processes.map { ["pid": Int($0.processIdentifier), "active": $0.isActive,
+                "hidden": $0.isHidden, "finishedLaunching": $0.isFinishedLaunching,
+                "activationPolicy": $0.activationPolicy.rawValue] as [String: Any] }, "cgWindows": windows]
+        if let discovered { controller["windowWaitSucceeded"] = discovered }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+            attachment.name = "startup-controller.json"; attachment.lifetime = .keepAlways; activity.add(attachment)
+        } catch { XCTFail("Startup controller serialization failed: \(error)") }
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "startup-AX-hierarchy"; hierarchy.lifetime = .keepAlways; activity.add(hierarchy)
+        let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screen.name = "startup-screen"; screen.lifetime = .keepAlways; activity.add(screen)
+    }
 }
 
 @MainActor
@@ -1052,5 +1117,24 @@ final class MacventoryHeaderPointerDiagnostics: XCTestCase {
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
             XCTAssertTrue(app.staticTexts["org.example.app"].exists, "Sorting must preserve the selected application's identity")
         }
+    }
+}
+
+/// Three planned startup comparisons, each selected alone on a fresh hosted VM.
+/// They never retry a failed launch or substitute for the 17 primary cases.
+@MainActor
+final class MacventoryStartupDiagnostics: XCTestCase {
+    func testAOriginalActivationAndSelectionDiagnostics() throws { try startup() }
+    func testBLaunchWithoutExtraActivation() throws { try startup(activate: false) }
+    func testCOriginalActivationWithoutSelectionDiagnostics() throws { try startup(selection: false) }
+
+    private func startup(activate: Bool = true, selection: Bool = true) throws {
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self,
+                                         activateAfterLaunch: activate, selectionDiagnostics: selection,
+                                         startupDiagnostics: true)
+        // A genuine inventory window and its native table are required. No openWindow,
+        // New Window menu command, fabricated NSWindow, selection action or recovery.
+        let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5), "Startup stage: the real inventory table must attach")
     }
 }

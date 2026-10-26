@@ -2,6 +2,15 @@
 # Verify the explicitly selected, preinstalled GitHub runner toolchain. No installs.
 set -euo pipefail
 mkdir -p build/verification
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+# Explicit allowlist: never dump the environment or credentials into artifacts.
+keys = ['RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion', 'GITHUB_RUN_ID',
+        'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_SHA', 'SELECTION_SCENARIO', 'STARTUP_ARM']
+Path('build/verification/runner-context.json').write_text(json.dumps(
+    {key: os.environ.get(key, 'unset') for key in keys}, indent=2) + '\n')
+PY
 exec > >(tee build/verification/toolchain.log) 2>&1
 printf 'Runner architecture: %s\n' "$(uname -m)"
 sw_vers

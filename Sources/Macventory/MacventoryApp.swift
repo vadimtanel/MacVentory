@@ -6,7 +6,14 @@ import MacventoryCore
 struct MacventoryApp: App {
     @NSApplicationDelegateAdaptor(MacventoryAppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
+    init() {
+        let mode = InventoryRunMode(arguments: ProcessInfo.processInfo.arguments,
+                                    qaBundle: Bundle.main.object(forInfoDictionaryKey: "MacventoryQABundle") as? Bool == true)
+        QAStartupDiagnostics.start(isolated: mode.isolated)
+        QAStartupDiagnostics.record("app.init")
+    }
     var body: some Scene {
+        let _ = QAStartupDiagnostics.record("scene.body")
         WindowGroup {
             InventoryView().environmentObject(model)
                 .preferredColorScheme(model.configuration.appearance == "dark" ? .dark : model.configuration.appearance == "light" ? .light : nil)

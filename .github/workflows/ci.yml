@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       selection_scenario:
-        description: Temporary selection diagnostics; run isolated/paths before full
+        description: Temporary GUI diagnostics; startup investigates missing windows without selection
         required: true
         default: isolated
         type: choice
-        options: [isolated, paths, after-layout, after-headers, full]
+        options: [startup, isolated, paths, after-layout, after-headers, full]
 permissions:
   contents: read
 defaults:
@@ -73,13 +73,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   ui:
-    name: XCUITest (synthetic inventory and simulated removal)
+    name: XCUITest (synthetic inventory and simulated removal) [${{ matrix.startup_arm }}]
     runs-on: macos-26
     needs: native
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each startup comparison is the first and only GUI test on its own VM.
+        # Other scenarios retain one job and their complete existing coverage.
+        startup_arm: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.selection_scenario == 'startup' && '["original","no-extra-activation","selection-disabled"]' || '["suite"]') }}
     env:
       SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || 'full' }}
       TESTED_SHA: ${{ github.sha }}
+      STARTUP_ARM: ${{ matrix.startup_arm }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify runner and pinned toolchain
@@ -96,6 +103,7 @@ jobs:
           python3 scripts/verify-ui-selection-run.py "$SELECTION_SCENARIO" build/verification/xcode-ui-tests.log \
             --expected-sha "$TESTED_SHA" --tested-head build/verification/tested-head.txt \
             --recorded-scenario build/verification/selection-scenario.txt \
+            --startup-arm "$STARTUP_ARM" --recorded-startup-arm build/verification/startup-arm.txt \
             | tee build/verification/gui-sequence.json
       - name: Export primary xcresult evidence
         id: evidence
@@ -103,15 +111,25 @@ jobs:
         run: |
           result_bundle="build/verification/Selection-$SELECTION_SCENARIO.xcresult"
           if [[ "$SELECTION_SCENARIO" == full ]]; then result_bundle=build/verification/UITests.xcresult; fi
-          xcrun xcresulttool get test-results summary --path "$result_bundle" > build/verification/xcresult-summary.json
-          xcrun xcresulttool get test-results tests --path "$result_bundle" > build/verification/xcresult-tests.json
-          if [[ "$SELECTION_SCENARIO" != paths ]]; then
+          evidence_exit=0
+          xcrun xcresulttool get test-results summary --path "$result_bundle" > build/verification/xcresult-summary.json || evidence_exit=1
+          xcrun xcresulttool get test-results tests --path "$result_bundle" > build/verification/xcresult-tests.json || evidence_exit=1
+          if [[ "$SELECTION_SCENARIO" == startup ]]; then
+            if method="$(python3 scripts/verify-ui-selection-run.py startup /dev/null --startup-arm "$STARTUP_ARM" --print-startup-method)"; then
+              xcrun xcresulttool get test-results activities --path "$result_bundle" \
+                --test-id "MacventoryStartupDiagnostics/$method()" \
+                > build/verification/startup-activities.json || evidence_exit=1
+            else
+              evidence_exit=1
+            fi
+          elif [[ "$SELECTION_SCENARIO" != paths ]]; then
             xcrun xcresulttool get test-results activities --path "$result_bundle" \
               --test-id 'MacventoryUITests/testExplicitExecutionLevelsAndInteractiveVerification()' \
-              > build/verification/selection-activities.json
+              > build/verification/selection-activities.json || evidence_exit=1
           fi
           xcrun xcresulttool export attachments --path "$result_bundle" \
-            --output-path build/verification/primary-attachments
+            --output-path build/verification/primary-attachments || evidence_exit=1
+          exit "$evidence_exit"
       - name: Compare synthetic native header proxies on the hosted runtime
         id: header_proxies
         if: always() && steps.gui.outputs.primary_finished == 'true' && env.SELECTION_SCENARIO == 'full'
@@ -154,7 +172,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: verification-ui
+          name: verification-ui${{ matrix.startup_arm != 'suite' && format('-startup-{0}', matrix.startup_arm) || '' }}
           path: build/verification/
           if-no-files-found: warn
           retention-days: 14

@@ -8,6 +8,7 @@ private struct InventorySettingsPresentation: Identifiable {
 }
 
 struct InventoryView: View {
+    init() { QAStartupDiagnostics.record("inventoryView.init") }
     @EnvironmentObject private var model: AppModel
     @State private var navigation: Set<String> = ["view:all"]
     @State private var search = ""
@@ -49,6 +50,7 @@ struct InventoryView: View {
     // Separate opaque view types keep each SwiftUI builder small enough to type-check.
     // State stays in this view so navigation, selection and sheet lifetimes are unchanged.
     var body: some View {
+        let _ = QAStartupDiagnostics.record("inventoryView.body")
         NavigationSplitView {
             sidebar
         } detail: {
@@ -221,7 +223,10 @@ struct InventoryView: View {
             if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort) }
             else { legacyTable }
         }
-        .onAppear { model.noteWindowAppearance() }
+        .onAppear {
+            QAStartupDiagnostics.record("inventoryView.appeared")
+            model.noteWindowAppearance()
+        }
         .background {
             if selectionDiagnostics { QASelectionObserver(selected: selected, rows: rows.map(\.id), search: search).frame(width: 0, height: 0) }
         }

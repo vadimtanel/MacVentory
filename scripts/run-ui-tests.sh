@@ -3,11 +3,15 @@
 # No retries, dispatch, live effects or outcome substitution.
 set -euo pipefail
 scenario="${SELECTION_SCENARIO:?Set SELECTION_SCENARIO}"
+startup_arm="${STARTUP_ARM:-suite}"
 selected=MacventoryUITests/MacventoryUITests
 target=testExplicitExecutionLevelsAndInteractiveVerification
 filters=("-only-testing:$selected/$target")
 result_bundle="build/verification/Selection-$scenario.xcresult"
 case "$scenario" in
+  startup)
+    method="$(python3 scripts/verify-ui-selection-run.py startup /dev/null --startup-arm "$startup_arm" --print-startup-method)"
+    filters=("-only-testing:MacventoryUITests/MacventoryStartupDiagnostics/$method") ;;
   isolated) filters+=("-only-testing:$selected/testSearchSelectionAndDetailsContract") ;;
   paths) filters=("-only-testing:MacventoryUITests/MacventorySelectionPathDiagnostics") ;;
   after-layout) filters+=("-only-testing:$selected/testDetailsActionsStayVisibleAcrossLayoutsAndLongMetadata") ;;
@@ -15,8 +19,10 @@ case "$scenario" in
   full) filters=("-only-testing:$selected"); result_bundle=build/verification/UITests.xcresult ;;
   *) exit 2 ;;
 esac
+[[ "$scenario" == startup || "$startup_arm" == suite ]] || { echo 'Startup arm cannot change primary coverage' >&2; exit 2; }
 mkdir -p build/verification
 printf '%s\n' "$scenario" > build/verification/selection-scenario.txt
+printf '%s\n' "$startup_arm" > build/verification/startup-arm.txt
 git rev-parse HEAD > build/verification/tested-head.txt
 expected_sha="${TESTED_SHA:-$(git rev-parse HEAD)}"
 [[ "$(cat build/verification/tested-head.txt)" == "$expected_sha" ]] || { echo 'Checkout SHA mismatch' >&2; exit 1; }
@@ -40,6 +46,7 @@ set +e
 python3 scripts/verify-ui-selection-run.py "$scenario" build/verification/xcode-ui-tests.log \
   --expected-sha "$expected_sha" --tested-head build/verification/tested-head.txt \
   --recorded-scenario build/verification/selection-scenario.txt \
+  --startup-arm "$startup_arm" --recorded-startup-arm build/verification/startup-arm.txt \
   > build/verification/gui-sequence.json
 sequence_exit=$?
 set -e

@@ -28,7 +28,13 @@ ORIGINAL_CASES = (
 )
 SELECTION_CASE = 'testSearchSelectionAndDetailsContract'
 TARGET = 'testExplicitExecutionLevelsAndInteractiveVerification'
+STARTUP_ARMS = {
+    'original': 'testAOriginalActivationAndSelectionDiagnostics',
+    'no-extra-activation': 'testBLaunchWithoutExtraActivation',
+    'selection-disabled': 'testCOriginalActivationWithoutSelectionDiagnostics',
+}
 FOCUSED = {
+    'startup': list(STARTUP_ARMS.values()),
     'isolated': [TARGET, SELECTION_CASE],
     'paths': ['testAWithoutSearch', 'testBSearchThenOneClick', 'testCSearchThenTabThenOneClick',
               'testDSearchThenOneClickWithoutExtraActivation', 'testESearchThenNativeKeyboardSelection'],
@@ -36,8 +42,8 @@ FOCUSED = {
     'after-headers': ['testAllNativeHeaderSortsPreserveSelection', TARGET],
 }
 
-def inspect_log(scenario, text):
-    case_class = 'MacventorySelectionPathDiagnostics' if scenario == 'paths' else 'MacventoryUITests'
+def inspect_log(scenario, text, startup_arm='suite'):
+    case_class = {'paths': 'MacventorySelectionPathDiagnostics', 'startup': 'MacventoryStartupDiagnostics'}.get(scenario, 'MacventoryUITests')
     prefix = r"^Test Case '-\[MacventoryUITests\." + case_class + r" (\w+)\]' "
     events = re.findall(prefix + r'(started|passed|failed|skipped)\b', text, re.M)
     names = lambda status: [name for name, kind in events if kind == status]
@@ -45,6 +51,15 @@ def inspect_log(scenario, text):
     terminal = re.findall(r'^\*\* TEST (?:EXECUTE )?(SUCCEEDED|FAILED) \*\*$', text, re.M)
     required = list(ORIGINAL_CASES) + [SELECTION_CASE] if scenario == 'full' else FOCUSED[scenario]
     errors = []
+    if scenario == 'startup':
+        required = [STARTUP_ARMS[startup_arm]] if startup_arm in STARTUP_ARMS else []
+        if not required:
+            errors.append('Startup requires an explicit fresh-runner arm; sequential startup suites are not accepted')
+        all_starts = re.findall(r"^Test Case '-\[([^\]]+)\]' started\b", text, re.M)
+        if len(all_starts) != 1:
+            errors.append('A cold-start arm must be the only XCTest case in its runner job')
+    elif startup_arm != 'suite':
+        errors.append('A startup arm cannot select or substitute for primary GUI coverage')
     if len(started) != len(required) or set(started) != set(required):
         errors.append('Required GUI coverage is missing, repeated or unexpected')
     if scenario != 'full' and started != required:
@@ -54,7 +69,7 @@ def inspect_log(scenario, text):
     if terminal != ['SUCCEEDED']:
         errors.append('Expected exactly one successful Xcode terminal result with no failure marker')
     return {
-        'scenario': scenario, 'required': required, 'actual_order': started,
+        'scenario': scenario, 'startup_arm': startup_arm, 'required': required, 'actual_order': started,
         'passed': passed, 'failed': failed, 'skipped': skipped,
         'counts': dict(started=len(started), passed=len(passed), failed=len(failed), skipped=len(skipped)),
         'not_completed': [name for name in started if name not in passed + failed + skipped],
@@ -68,8 +83,16 @@ def main():
     parser.add_argument('--expected-sha')
     parser.add_argument('--tested-head', type=Path)
     parser.add_argument('--recorded-scenario', type=Path)
+    parser.add_argument('--startup-arm', default='suite', choices=['suite', *STARTUP_ARMS])
+    parser.add_argument('--recorded-startup-arm', type=Path)
+    parser.add_argument('--print-startup-method', action='store_true', help='Print the explicitly selected startup method without executing tests')
     args = parser.parse_args()
-    result = inspect_log(args.scenario, args.log.read_text()) if args.log.exists() else {
+    if args.print_startup_method:
+        if args.scenario != 'startup' or args.startup_arm not in STARTUP_ARMS:
+            parser.error('An explicit startup arm is required')
+        print(STARTUP_ARMS[args.startup_arm])
+        return 0
+    result = inspect_log(args.scenario, args.log.read_text(), args.startup_arm) if args.log.exists() else {
         'scenario': args.scenario, 'errors': ['Primary Xcode log is missing'],
     }
     errors = result['errors']
@@ -83,11 +106,20 @@ def main():
         result['recorded_scenario'] = actual
         if actual != args.scenario:
             errors.append('Recorded scenario does not match the requested scenario')
+    if args.recorded_startup_arm:
+        actual = args.recorded_startup_arm.read_text().strip() if args.recorded_startup_arm.exists() else None
+        result['recorded_startup_arm'] = actual
+        if actual != args.startup_arm:
+            errors.append('Recorded startup arm does not match the requested arm')
     source = (Path(__file__).resolve().parent.parent / 'UITests/MacventoryUITests.swift').read_text()
     primary = source.split('final class MacventoryUITests: XCTestCase {', 1)[1].split('final class MacventorySelectionPathDiagnostics:', 1)[0]
     methods = re.findall(r'func (test\w+)\(', primary)
     if len(methods) != 17 or set(methods) != set(ORIGINAL_CASES) | {SELECTION_CASE}:
         errors.append('Primary source no longer contains all 16 original cases plus the selection regression')
+    if args.scenario == 'startup':
+        diagnostic = source.split('final class MacventoryStartupDiagnostics: XCTestCase {', 1)[-1]
+        if set(re.findall(r'func (test\w+)\(', diagnostic)) != set(STARTUP_ARMS.values()):
+            errors.append('Startup source does not contain the exact planned comparison arms')
     print(json.dumps(result, indent=2))
     for error in errors:
         print(error, file=sys.stderr)
