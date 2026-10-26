@@ -257,7 +257,7 @@ struct InventoryView: View {
                 HStack(spacing: 9) {
                     AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"])
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name).lineLimit(1).help(item.name)
+                        Text(item.name).lineLimit(1).help(item.name).accessibilityIdentifier("inventory.name." + item.id)
                         if item.stale { Text("Cached / Stale").font(.caption2).foregroundStyle(.secondary) }
                     }
                 }.padding(.vertical, 3).pointingControl()

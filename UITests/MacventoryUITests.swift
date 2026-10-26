@@ -1,6 +1,16 @@
 import XCTest
 import Darwin
 
+// Read-only app-created evidence. This never selects a row or changes focus/state.
+private func selectionEvents(_ nonce: String) -> [[String: Any]] {
+    guard let directory = try? QATraceHandoff.Directory(nonce),
+          let data = try? directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit) else { return [] }
+    // A read can end during an append; only complete JSON lines are observations.
+    return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap {
+        (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+    }
+}
+
 @MainActor
 private func requireFixtureSidebar(_ app: XCUIApplication) throws {
     let sidebar = app.descendants(matching: .any).matching(identifier: "inventory.sidebar").firstMatch
@@ -146,7 +156,7 @@ final class MacventoryUITests: XCTestCase {
             try clickVisible(search)
             search.typeKey("a", modifierFlags: .command)
             search.typeText(name)
-            XCTAssertEqual(search.value as? String, name)
+            try requireSearch(name, in: app)
             try openDetailsReview(name, in: app)
             let sheet = app.sheets.firstMatch
             XCTAssertTrue(sheet.waitForExistence(timeout: 5))
@@ -180,6 +190,38 @@ final class MacventoryUITests: XCTestCase {
         try clickVisible(app.sheets.buttons["management.cancel"])
     }
 
+    func testSearchSelectionAndDetailsContract() throws {
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self)
+        // Both queries begin in the active native search editor. One native row
+        // click must select the exact installation; no Tab, retry or injected ID.
+        for name in ["Example App", "Interactive Vendor Example"] {
+            let search = app.searchFields.firstMatch
+            try clickVisible(search)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText(name)
+            try requireSearch(name, in: app)
+            _ = try selectInventoryItem(name, in: app)
+            XCTAssertFalse(app.sheets.firstMatch.exists, "Selection alone must not open management")
+        }
+    }
+
+    private func requireSearch(_ query: String, in app: XCUIApplication,
+                               file: StaticString = #filePath, line: UInt = #line) throws {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", query), object: app.searchFields.firstMatch)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [expectation], timeout: 5) == .completed ? app : nil,
+                          "Selection stage 1: the search field must contain the requested query", file: file, line: line)
+    }
+
+    private func requireSelectionEvent(_ stage: String, nonce: String, after sequence: Int,
+                                       matching predicate: @escaping ([String: Any]) -> Bool,
+                                       file: StaticString = #filePath, line: UInt = #line) throws {
+        let observation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            selectionEvents(nonce).contains { ($0["sequence"] as? Int ?? 0) > sequence && predicate($0) }
+        }, object: nil)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [observation], timeout: 5) == .completed ? stage : nil,
+                          stage + "; inspect native-selection.jsonl and the retained hierarchy", file: file, line: line)
+    }
+
     private func assertText(_ text: String, in container: XCUIElement,
                             file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(container.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)).firstMatch.waitForExistence(timeout: 5), file: file, line: line)
@@ -187,12 +229,17 @@ final class MacventoryUITests: XCTestCase {
 
     private func selectedDetails(_ name: String, in app: XCUIApplication,
                                  file: StaticString = #filePath, line: UInt = #line) throws -> XCUIElement {
-        let row = inventoryTable(app).children(matching: .outlineRow).containing(.staticText, identifier: name).firstMatch
+        let table = inventoryTable(app)
+        let text = table.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", name, name)).firstMatch
+        _ = try XCTUnwrap(text.exists && text.identifier.hasPrefix("inventory.name.") ? text : nil,
+                          "Selection stage 2: identify the selected installation by its stable ID", file: file, line: line)
+        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: text.identifier).firstMatch
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: row)
         let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
         let title = details.staticTexts["inventory.details.title"]
         let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@", name, name), object: title)
-        let result = XCTWaiter.wait(for: [selected, identity], timeout: 5)
+        let rowResult = XCTWaiter.wait(for: [selected], timeout: 5)
+        let result = rowResult == .completed ? XCTWaiter.wait(for: [identity], timeout: 5) : rowResult
         if result != .completed {
             let attachment = XCTAttachment(string: app.debugDescription)
             attachment.name = "Selected inventory item and Details identity"
@@ -200,7 +247,8 @@ final class MacventoryUITests: XCTestCase {
             add(attachment)
         }
         return try XCTUnwrap(result == .completed && details.exists ? details : nil,
-                             "The real selected row and Details title must both match \(name)", file: file, line: line)
+                             rowResult == .completed ? "Selection stage 6: Details must identify \(name)" :
+                                "Selection stage 4: the native inventory row must remain selected for \(name)", file: file, line: line)
     }
 
     private func openDetailsReview(_ name: String, in app: XCUIApplication,
@@ -231,27 +279,72 @@ final class MacventoryUITests: XCTestCase {
 
     private func selectInventoryItem(_ name: String, in app: XCUIApplication,
                                      file: StaticString = #filePath, line: UInt = #line) throws -> XCUIElement {
-        app.activate()
+        var completed = false
+        defer {
+            if !completed { recordDetailsInteraction(app, phase: name + " — selection contract failed") }
+        }
+        // Launch already establishes foreground state. Do not reactivate an
+        // already active app between editing search and its selection gesture.
         XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
         let table = inventoryTable(app)
-        let text = table.staticTexts[name].firstMatch
-        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && table.staticTexts.matching(identifier: name).count == 1 ? text : nil,
-                          "Resolve one exact fixture name in the native table", file: file, line: line)
+        let texts = table.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", name, name))
+        let text = texts.firstMatch
+        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && texts.count == 1 && text.identifier.hasPrefix("inventory.name.") ? text : nil,
+                          "Selection stage 2: resolve one identified installation name in the native table", file: file, line: line)
+        let itemID = String(text.identifier.dropFirst("inventory.name.".count))
+        let token = QASelectionDiagnostics.token(itemID)
+        let row = table.children(matching: .outlineRow).containing(.staticText, identifier: text.identifier).firstMatch
         let viewport = inventoryViewport(table, in: app)
-        let coordinate = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let frame = text.frame, point = coordinate.screenPoint
-        let evidence = XCTAttachment(string: "name=\(name) state=\(app.state.rawValue) hittable=\(text.isHittable) " +
-            "text=\(frame) window/table/viewport=\([app.windows.firstMatch.frame, table.frame, viewport.frame]) point=\(point)")
+        _ = try XCTUnwrap(row.exists && viewport.exists ? row : nil, "Selection stage 2: exact native row and viewport must exist", file: file, line: line)
+        let frame = row.frame
+        let point = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).screenPoint
+        let evidence = XCTAttachment(string: "name=\(name) id=\(token) state=\(app.state.rawValue) hittable=\(row.isHittable) " +
+            "row=\(frame) text=\(text.frame) window/table/viewport=\([app.windows.firstMatch.frame, table.frame, viewport.frame]) point=\(point)\n" + app.debugDescription)
         evidence.name = name + " — native row selection pointer geometry"
         evidence.lifetime = .keepAlways
         add(evidence)
         _ = try XCTUnwrap(app.state == .runningForeground && viewport.exists && !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
             frame.width > 0 && frame.height > 0 && point.x.isFinite && point.y.isFinite && frame.contains(point) &&
-            [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(frame) && $0.contains(point) } ? text : nil,
-            "Select through the exact visible cell text, never a clipped row container or guessed point", file: file, line: line)
-        coordinate.click()
-        // A sent click is not proof of selection. No retry or state injection.
-        return try selectedDetails(name, in: app, file: file, line: line)
+            [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(point) && $0.contains(text.frame) } ? row : nil,
+            "Selection stage 2: native row center and identified name must be visible, without a modal overlay", file: file, line: line)
+        let arguments = app.launchArguments
+        let nonce = arguments.firstIndex(of: "--qa-selection-trace-id").map { arguments[$0 + 1] }
+        let previousEvents = nonce.map(selectionEvents) ?? []
+        let before = previousEvents.last?["sequence"] as? Int ?? 0
+        let wasSelected = row.isSelected
+        let wasObserved = previousEvents.last { $0["event"] as? String == "selection.observed" }?["value"] as? String == token
+        row.click() // Exactly one native row action, not a child StaticText coordinate.
+        if let nonce {
+            try requireSelectionEvent("Selection stage 3: the mouse must hit the intended native row", nonce: nonce, after: before, matching: { event in
+                guard event["event"] as? String == "event.beforeDelivery", event["eventType"] as? Int == 1,
+                      let ids = event["rowIDs"] as? [String], let tables = event["tables"] as? [[String: Any]] else { return false }
+                return tables.contains { table in
+                    guard let index = table["rowAtPoint"] as? Int, ids.indices.contains(index) else { return false }
+                    return ids[index] == token
+                }
+            }, file: file, line: line)
+            if !wasSelected {
+                try requireSelectionEvent("Selection stage 4: native selection must notify the target row", nonce: nonce, after: before, matching: { event in
+                    guard event["event"] as? String == "native.selectionChanged", let ids = event["rowIDs"] as? [String],
+                          let tables = event["tables"] as? [[String: Any]] else { return false }
+                    return tables.contains { table in
+                        (table["selectedRows"] as? [Int] ?? []).contains { ids.indices.contains($0) && ids[$0] == token }
+                    }
+                }, file: file, line: line)
+            }
+            // AppKit selection and the SwiftUI binding can already agree before
+            // a repeated click; neither owes us a redundant change event.
+            if !wasObserved {
+                try requireSelectionEvent("Selection stage 5: SwiftUI must receive the target installation ID", nonce: nonce, after: before,
+                                          matching: { $0["event"] as? String == "binding.set" && $0["new"] as? String == token }, file: file, line: line)
+                try requireSelectionEvent("Selection stage 5: SwiftUI must retain the observed target ID", nonce: nonce, after: before,
+                                          matching: { $0["event"] as? String == "selection.observed" && $0["value"] as? String == token }, file: file, line: line)
+            }
+        }
+        // Native selected state and independently rendered Details are still required.
+        let details = try selectedDetails(name, in: app, file: file, line: line)
+        completed = true
+        return details
     }
 
     private func inventoryViewport(_ table: XCUIElement, in app: XCUIApplication) -> XCUIElement {
@@ -267,7 +360,7 @@ final class MacventoryUITests: XCTestCase {
         let title = sheet.staticTexts["management.title"]
         let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@ OR value BEGINSWITH %@", name, name, name + " "), object: title)
         _ = try XCTUnwrap(XCTWaiter.wait(for: [identity], timeout: 5) == .completed ? sheet : nil,
-                          "The Management title must identify the selected fixture", file: file, line: line)
+                          "Selection stage 7: Management must identify the same selected fixture", file: file, line: line)
         XCTAssertTrue(sheet.buttons["management.confirm"].exists, file: file, line: line)
         XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled, "Opening review must not authorize execution", file: file, line: line)
         XCTAssertFalse(sheet.checkBoxes["management.acknowledge"].isEnabled, file: file, line: line)
