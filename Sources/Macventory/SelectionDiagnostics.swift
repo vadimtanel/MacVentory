@@ -5,7 +5,8 @@ import Darwin
 
 /// Shared by the app and XCTest runner. Only an opaque nonce crosses the launch boundary.
 /// A fixed OS temporary root avoids either process's container/TMPDIR. Each run owns a
-/// fresh 0700 directory; descriptor-relative operations never follow a supplied link.
+/// fresh app-created 0700 directory; the runner only reads. Descriptor-relative operations
+/// never follow a supplied link. The app removes its evidence on normal termination.
 enum QATraceHandoff {
     static let traceName = "native-selection.jsonl"
     static let startupName = "startup.jsonl"
@@ -50,6 +51,32 @@ enum QATraceHandoff {
             let fd = openat(descriptor, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard fd >= 0 else { throw failure("Create \(name)") }
             return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        }
+        /// App-side cleanup only. Never recurse or remove an unknown filename.
+        func remove() throws {
+            var current = stat(), retained = stat()
+            guard lstat(url.path, &current) == 0, fstat(descriptor, &retained) == 0 else {
+                throw failure("Inspect trace directory before cleanup")
+            }
+            guard current.st_dev == retained.st_dev, current.st_ino == retained.st_ino,
+                  current.st_uid == geteuid(), current.st_mode & S_IFMT == S_IFDIR,
+                  current.st_mode & 0o777 == 0o700 else {
+                throw failure("Trace directory changed before cleanup", code: EACCES)
+            }
+            for name in [startupName, traceName] {
+                let fd = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+                if fd < 0 && errno == ENOENT { continue }
+                guard fd >= 0 else { throw failure("Open trace file before cleanup") }
+                var info = stat()
+                let inspected = fstat(fd, &info)
+                close(fd)
+                guard inspected == 0, info.st_uid == geteuid(), info.st_mode & S_IFMT == S_IFREG,
+                      info.st_mode & 0o777 == 0o600, info.st_nlink == 1 else {
+                    throw failure("Invalid trace file before cleanup", code: EACCES)
+                }
+                guard unlinkat(descriptor, name, 0) == 0 else { throw failure("Remove private trace file") }
+            }
+            guard rmdir(url.path) == 0 else { throw failure("Remove private trace directory") }
         }
         func read(_ name: String, limit: Int) throws -> Data {
             guard [traceName, startupName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
@@ -101,6 +128,7 @@ enum QASelectionDiagnostics {
         session?.record(event, fields)
     }
     private static var attempted = false
+    private static var cleanupObserver: NSObjectProtocol?
     static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard !attempted, enabled(isolated: isolated, arguments: arguments) else { return }
         attempted = true
@@ -109,7 +137,12 @@ enum QASelectionDiagnostics {
             guard let index = arguments.firstIndex(of: "--qa-selection-trace-id"), arguments.indices.contains(index + 1) else {
                 throw QATraceHandoff.failure("Missing --qa-selection-trace-id", code: EINVAL)
             }
-            let directory = try QATraceHandoff.Directory(arguments[index + 1])
+            let directory = try QATraceHandoff.Directory.create(arguments[index + 1])
+            cleanupObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                                                     object: nil, queue: .main) { _ in
+                do { try directory.remove() }
+                catch { NSLog("QA selection trace cleanup failed: %@", error.localizedDescription) }
+            }
             startup = try directory.createFile(QATraceHandoff.startupName)
             try QATraceHandoff.writeStartup(startup!, ["stage": "bootstrap", "pid": ProcessInfo.processInfo.processIdentifier,
                 "isolated": isolated, "enabled": true, "uiTestingArgument": arguments.contains("--ui-testing"),

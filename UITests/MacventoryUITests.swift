@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 @MainActor
 private func requireFixtureSidebar(_ app: XCUIApplication) throws {
@@ -31,10 +32,8 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
     app.launchArguments = arguments
     if let testCase, arguments.contains("--qa-execution-levels") {
         let nonce = UUID().uuidString
-        let directory = try QATraceHandoff.Directory.create(nonce)
+        let destination = try QATraceHandoff.location(nonce) // Derive only: the sandboxed runner cannot mkdir here.
         app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce]
-        let controller = try JSONSerialization.data(withJSONObject: QATraceHandoff.processPaths.merging(
-            ["destination": directory.url.path]) { _, new in new }, options: [.sortedKeys])
         testCase.addTeardownBlock {
             XCTContext.runActivity(named: "QA-only native selection observations") { activity in
                 func attach(_ data: Data, _ name: String) {
@@ -43,27 +42,57 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
                     attachment.lifetime = .keepAlways
                     activity.add(attachment)
                 }
-                attach(controller, "selection-controller.json")
-                do {
-                    _ = try QATraceHandoff.Directory(nonce) // Detect a changed/invalid directory independently of the retained descriptor.
-                    let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
-                    attach(startup, "selection-startup.jsonl")
-                    let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
-                        try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
-                    }
-                    XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
-                                  "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
+                var controller: [String: Any] = QATraceHandoff.processPaths
+                controller["destination"] = destination.path
+                controller["nonce"] = nonce
+                controller["pid"] = ProcessInfo.processInfo.processIdentifier
+                func failure(_ stage: String, _ error: Error) {
+                    controller[stage] = ["domain": (error as NSError).domain, "code": (error as NSError).code,
+                                         "error": error.localizedDescription]
+                    XCTFail("Trace handoff \(stage) failed: \(error.localizedDescription)")
                 }
-                catch { XCTFail("Trace bootstrap receipt unavailable at \(directory.url.path): \(error.localizedDescription). App bootstrap may not have run; inspect launch/console evidence.") }
                 do {
-                    let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
-                    attach(data, "native-selection.jsonl")
-                    let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
-                        (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
-                    }
-                    XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
-                                  "Trace created but native observer was not created/attached; inspect startup and trace stages")
-                } catch { XCTFail("Native trace read failed at \(directory.url.path): \(error.localizedDescription). Inspect selection-startup.jsonl for app creation/validation failures.") }
+                    let directory = try QATraceHandoff.Directory(nonce)
+                    controller["open"] = "success"
+                    do {
+                        let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
+                        attach(startup, "selection-startup.jsonl")
+                        controller["startupRead"] = "success"
+                        let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
+                            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+                        }
+                        XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
+                                      "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
+                    } catch { failure("startupRead", error) }
+                    do {
+                        let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
+                        attach(data, "native-selection.jsonl")
+                        controller["traceRead"] = "success"
+                        let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
+                            (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
+                        }
+                        XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
+                                      "Trace created but native observer was not created/attached; inspect startup and trace stages")
+                    } catch { failure("traceRead", error) }
+                } catch { failure("open", error) }
+                // Capture reader evidence even when directory open/read fails.
+                do { attach(try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys]), "selection-controller.json") }
+                catch { XCTFail("Could not serialize trace controller evidence: \(error)") }
+            }
+            // Only this synthetic fixture receives a normal Quit, after attachment capture.
+            // Its app-side termination observer owns cleanup; the read-only runner never unlinks.
+            if app.state == .runningBackground || app.state == .runningForeground {
+                app.activate()
+                XCTAssertEqual(app.state, .runningForeground)
+                if app.state == .runningForeground { app.typeKey("q", modifierFlags: .command) }
+                XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "Synthetic fixture must quit normally for private trace cleanup")
+            }
+            do {
+                _ = try QATraceHandoff.Directory(nonce)
+                XCTFail("Synthetic app did not clean up its private trace directory")
+            } catch {
+                XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
+                XCTAssertEqual((error as NSError).code, Int(ENOENT), "Trace cleanup must remove only this session directory")
             }
         }
     }
