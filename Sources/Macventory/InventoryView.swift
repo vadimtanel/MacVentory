@@ -7,6 +7,20 @@ private struct InventorySettingsPresentation: Identifiable {
     let tab: Int
 }
 
+private struct InventorySearchPresentation: ViewModifier {
+    @Binding var text: String
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $text, prompt: "Search software, identifiers, paths…")
+        } else {
+            content
+        }
+    }
+}
+
 struct InventoryView: View {
     init() { QAStartupDiagnostics.record("inventoryView.init") }
     @EnvironmentObject private var model: AppModel
@@ -60,7 +74,6 @@ struct InventoryView: View {
             } else {
                 inventoryContent
                     .inventoryNavigationTitle()
-                    .searchable(text: $search, prompt: "Search software, identifiers, paths…")
                     .toolbar { inventoryToolbar }
                     .sheet(item: $managementPresentation, onDismiss: { model.closeManagement() }) { presentation in
                         ManagementView(presentation: presentation, onReviewLeftovers: { managementPresentation = nil; model.closeManagement(); navigation = ["leftovers"] }).id(presentation.id)
@@ -81,6 +94,9 @@ struct InventoryView: View {
                     }
             }
         }
+        // Keep search presentation owned by the stable navigation container as
+        // the inventory replaces its table/details layout during selection.
+        .modifier(InventorySearchPresentation(text: $search, enabled: !navigation.contains("leftovers")))
         .background(NativeControlHelp().frame(width: 0, height: 0))
         .sheet(item: $settingsPresentation) { presentation in
             SettingsView(onClose: { settingsPresentation = nil }, initialTab: presentation.tab).id(presentation.id)
@@ -240,7 +256,6 @@ struct InventoryView: View {
                 }.padding(30).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        #if !QA_SELECTION_NO_ITEM_ACTIONS
         .contextMenu(forSelectionType: String.self) { ids in
             if ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) {
                 Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
@@ -255,7 +270,6 @@ struct InventoryView: View {
             selected = id
             reviewUninstall(item)
         }
-        #endif
 
     }
     private var legacyTable: some View {
