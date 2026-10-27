@@ -220,13 +220,11 @@ struct InventoryView: View {
     }
     private var table: some View {
         Group {
-            #if QA_SELECTION_LEGACY_TABLE
-            // Temporary compile-time comparison on the affected runtime only.
-            legacyTable
-            #else
-            if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort) }
+            if #available(macOS 14, *) {
+                CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort,
+                                           menu: tableContextMenu, primaryAction: tablePrimaryAction)
+            }
             else { legacyTable }
-            #endif
         }
         .onAppear {
             QAStartupDiagnostics.record("inventoryView.appeared")
@@ -245,21 +243,24 @@ struct InventoryView: View {
                 }.padding(30).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        .contextMenu(forSelectionType: String.self) { ids in
-            if ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) {
-                Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
-                if let path = item.path { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder"); Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path") }
-                if model.runningTarget(for: item) != nil {
-                    Button("Force Quit") { selected = id; manage(item, forceQuit: true) }.disabled(model.scanning || model.managementWorking).controlHelp("Review the unsaved-work warning and exact running process before Force Quit")
-                }
-                Button("Uninstall…") { selected = id; manage(item) }.disabled(model.scanning || model.managementWorking).controlHelp("Review Force Quit, Clear App Data and source-aware Uninstall in one dialog")
-            }
-        } primaryAction: { ids in
-            guard ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) else { return }
-            selected = id
-            reviewUninstall(item)
-        }
+    }
 
+    @ViewBuilder
+    private func tableContextMenu(_ ids: Set<String>) -> some View {
+        if ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) {
+            Button("Copy Identifier") { Display.copy(item.bundleID ?? item.packageID ?? item.id) }.controlHelp("Copy Software Identifier")
+            if let path = item.path { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.controlHelp("Reveal in Finder"); Button("Copy Path") { Display.copy(path) }.controlHelp("Copy Installation Path") }
+            if model.runningTarget(for: item) != nil {
+                Button("Force Quit") { selected = id; manage(item, forceQuit: true) }.disabled(model.scanning || model.managementWorking).controlHelp("Review the unsaved-work warning and exact running process before Force Quit")
+            }
+            Button("Uninstall…") { selected = id; manage(item) }.disabled(model.scanning || model.managementWorking).controlHelp("Review Force Quit, Clear App Data and source-aware Uninstall in one dialog")
+        }
+    }
+
+    private func tablePrimaryAction(_ ids: Set<String>) {
+        guard ids.count == 1, let id = ids.first, let item = rows.first(where: { $0.id == id }) else { return }
+        selected = id
+        reviewUninstall(item)
     }
     private var legacyTable: some View {
         Table(rows, selection: inventorySelection, sortOrder: tableSort) {
@@ -280,6 +281,7 @@ struct InventoryView: View {
             TableColumn("Last Opened", sortUsing: InventoryComparator(.opened)) { Text(Display.date($0.lastOpenedAt, item: $0, field: "lastOpenedAt")).help($0.lastOpenedAt?.formatted(date: .complete, time: .standard) ?? "Not Available") }.width(min: 100, ideal: 115)
         }
         .accessibilityIdentifier("inventory.table").accessibilityHint("Select a row for details. Double-click or press Return to review uninstall eligibility; this never starts removal.")
+        .contextMenu(forSelectionType: String.self, menu: tableContextMenu, primaryAction: tablePrimaryAction)
     }
     private func libraryRow(_ view: LibraryView) -> some View {
         HStack { Text(view.rawValue); Spacer(); Text("\(model.items.filter { item in var filter = InventoryFilter(); filter.view = view; filter.showSystem = model.configuration.showSystem; return filter.matches(item, configuration: model.configuration) }.count)").foregroundStyle(.secondary).monospacedDigit() }.tag("view:" + view.id).help("Show " + view.rawValue).pointingControl()

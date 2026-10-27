@@ -2,13 +2,15 @@ import SwiftUI
 import MacventoryCore
 
 @available(macOS 14, *)
-struct CustomizableInventoryTable: View {
+struct CustomizableInventoryTable<Menu: View>: View {
     @EnvironmentObject private var model: AppModel
     @State private var isolatedCustomization = TableColumnCustomization<SoftwareItem>()
     private var currentCustomization: Binding<TableColumnCustomization<SoftwareItem>> { model.fixtureMode ? $isolatedCustomization : $customization }
     let rows: [SoftwareItem]
     @Binding var selection: String?
     @Binding var sortOrder: [InventoryComparator]
+    let menu: (Set<String>) -> Menu
+    let primaryAction: (Set<String>) -> Void
     @SceneStorage("Macventory.inventory.columns") private var customization: TableColumnCustomization<SoftwareItem>
     @State private var showColumns = false
     @State private var tableRevision = 0
@@ -42,6 +44,9 @@ struct CustomizableInventoryTable: View {
             // Recreate the native table after programmatic visibility changes: the macOS 27
             // runtime otherwise keeps the previous visible columns despite updated customization.
             }.id(tableRevision).accessibilityIdentifier("inventory.table").accessibilityHint("Select a row for details. Double-click or press Return to review uninstall eligibility; this never starts removal.")
+            // Keep item-based input handling on the selectable Table itself,
+            // rather than sharing its tracking scope with the Columns toolbar.
+            .contextMenu(forSelectionType: String.self, menu: menu, primaryAction: primaryAction)
         }
     }
     private func visibility(_ id: String) -> Binding<Bool> {
