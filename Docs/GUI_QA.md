@@ -1,5 +1,7 @@
 # Native GUI QA — Macventory 1.0.0
 
+**Historical GUI evidence.** Build-specific checks and retained screenshots below are not new v1.1.0 tests. Current implementation, hosted evidence and remaining limits are distinguished in [Verification](VERIFICATION.md); full CI must pass on the final commit before tagging. AX inspection is not full spoken VoiceOver or real removal verification.
+
 ## Build107 native synthetic checks
 
 Command-click selected Direct/Unmanaged plus Homebrew Formulae, showed both highlights and three combined fixture rows, then search narrowed to one matching tool. Leftover Data replaced the inventory-category selection. A mock access denial reported its exact check/path and retained recovery help after OK. System Settings launch was disabled in QA. Personal discovery status was visibly off; Scanning Settings shortcut was corrected and rechecked opening Scanning directly. Enabling it showed synthetic Documents/Downloads/Desktop folders requiring individual selection. Confirmation explicitly says folders move whole with their contents. Only isolated QA was closed/rebuilt; real app/process/data/settings remained untouched.

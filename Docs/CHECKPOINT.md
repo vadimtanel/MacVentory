@@ -1,5 +1,7 @@
 # Macventory 1.0.0 checkpoint — 24 October 2026
 
+**Historical recovery log.** The entries below retain their original build/state/authorization claims. For the merged v1.1.0 / build 108 candidate, use [current verification](VERIFICATION.md), [release preparation](RELEASING.md) and [the documentation inventory](RELEASE_DOCUMENTATION_REVIEW.md). This log is not current branch/index state or proof of final-release validation.
+
 ## Build107 — permission explanations, folder scope and sidebar selection
 
 Final local artifacts VERIFIED: build107 app signature, ZIP integrity, DMG checksum, SHA-256 checksums and 106 exact source inputs/hashes pass. Publication review has zero findings. Complete safe suite rerun after the Settings shortcut fix: 148 tests / 19 suites pass. No owner-data change or Git index/history/publication mutation performed.

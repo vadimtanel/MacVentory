@@ -1,6 +1,7 @@
 # Macventory — Product Requirements & Technical Specification
 
-**Version:** 1.5 — Macventory 1.0.0 UX and installation refinement  
+**Version:** 1.6 — Macventory 1.1.0 uninstall and installation health
+
 **Platform:** macOS Desktop  
 **Original creator:** Vadim Tanel  
 **Copyright:** © 2026 Vadim Tanel  
@@ -11,6 +12,8 @@
 **Primary language of application UI:** English
 
 > This document is the authoritative product specification. Application name: **Macventory**. Codex should review technical feasibility and document any necessary corrections rather than silently omitting requirements.
+
+Current source metadata is **1.1.0 / build 108**; this release is upcoming, not published. Section 29 states the current implemented scope and supersedes conflicting earlier uninstall/privilege/UI limits. Build-specific sections retain their historical identifiers and are not evidence of final-release validation. See [verification](Docs/VERIFICATION.md).
 
 ## 1. Product Vision
 
@@ -44,10 +47,10 @@ Macventory is a native, local-first macOS desktop application that inventories i
 
 - Bulk uninstall, automatic removal, dependency cleanup, and automatic user-data removal.
 - Automatic installation, package upgrades or updates.
-- Permanent background daemon or continuous activity monitoring.
+- Always-on inventory/activity monitoring. The optional, explicitly approved MacPorts authorization helper is separate from discovery; see section 29.
 - Tracking usage duration.
 - Cloud sync, user accounts, backend or analytics.
-- System cleaning, cache removal, or guaranteed reclaimable-space calculations.
+- Broad system cleaning or guaranteed reclaimable-space calculations. Separately confirmed bounded app-data/Leftover Data review is permitted; automatic cleanup is not.
 
 ## 3. Technology and Architecture
 
@@ -60,10 +63,10 @@ Macventory is a native, local-first macOS desktop application that inventories i
 | Persistence | Local SQLite or an equivalently lightweight native store, justify choice |
 | Unit/integration tests | Swift Testing / XCTest |
 | UI tests | XCUITest |
-| Build | Xcode / xcodebuild |
+| Build | SwiftPM/CLT native app bundling; Xcode/xcodebuild for project and UI validation |
 | CI | GitHub Actions (macOS runner) |
 
-**Minimum targeted OS:** macOS 13 Ventura, subject to compatibility verification. Support Intel and Apple Silicon builds. The final executable must be an ordinary `.app` and not require Java, Node, Python, Homebrew, or command-line interaction for everyday use.
+**Minimum configured OS:** macOS 13.0, subject to runtime verification. Apple Silicon arm64 is primary; Intel compatibility is optional and not runtime-verified. The final executable must be an ordinary `.app` and not require Java, Node, Python, Homebrew, or command-line interaction for everyday use.
 
 Architecture components:
 
@@ -151,6 +154,7 @@ Use native `NavigationSplitView` with a persistent **left sidebar**, main softwa
 - Large Applications
 - Recently Installed
 - Unknown Metadata
+- Attention Required
 
 **INSTALL SOURCES**
 - Mac App Store
@@ -166,6 +170,7 @@ Use native `NavigationSplitView` with a persistent **left sidebar**, main softwa
 - Unknown / Ambiguous
 
 **OTHER**
+- Leftover Data (separate review destination)
 - Settings
 - About
 
@@ -173,7 +178,7 @@ Show relevant item counts and scanner status. Allow hiding sources not installed
 
 ### Main table
 
-Default columns: **Icon, Name, Version, Source, Size, Installed, Last Opened**. Support useful column sorting, search, filters, selection, and a details view. Column visibility and reordering are desirable where practical without overcomplicating v1. Default to table, not icon grid.
+Default columns: **Icon, Name, Version, Source, Status, Size, Installed, Last Opened**. Seven metadata/status headers sort; Icon is not a sort field. Native column customization is available on macOS 14+, with a fixed-column macOS 13 fallback. Drag-reorder/runtime coverage remains subject to verification. Default to table, not icon grid.
 
 Search local cached results by name, bundle ID, package ID, source, path and version. Case-insensitive substring matching; do not rescan for every keypress.
 
@@ -258,6 +263,10 @@ Use only true verified installation dates for this grouping; optionally show sep
 
 Expose records lacking source, date, size or last-opened data to improve transparency.
 
+### Attention Required
+
+Expose actionable installation mismatches/partial states using stored source-aware health. Distinguish manager registration from expected-payload presence and historical receipts. A healthy CLI-only package need not have an app. Missing/access-denied/stale observations are not interchangeable, and a warning never grants removal authority.
+
 ## 11. Scanning and Cache Workflow
 
 - First launch opens UI promptly and begins optional initial scan.
@@ -274,8 +283,11 @@ Expose records lacking source, date, size or last-opened data to improve transpa
 
 **General:** show system applications, hide unavailable sources, default sorting, system/light/dark theme.  
 **Scanning:** custom app directories, external drive discovery off by default, scan on launch, cache controls.  
-**Cleanup discovery:** unused-day threshold, large-app threshold.  
-**Advanced:** scanner status and paths, clear cache, export sanitized diagnostics.
+**Discovery:** bounded recent/unused-day thresholds and large-app threshold.
+
+**Information:** scanner status, cache scope/maintenance and sanitized diagnostics.
+
+**Optional personal discovery:** default-off bounded direct-child suggestions in Documents/Downloads/Desktop; possible-only, individual manual review and separate confirmation.
 
 Do not display settings for features not implemented.
 
@@ -364,7 +376,7 @@ About window:
 > Created by Vadim Tanel  
 > Free & Open Source Software  
 > Licensed under Apache License 2.0  
-> [GitHub repository link after repository exists]
+> [Official repository](https://github.com/vadimtanel/MacVentory)
 
 ## 18. Distribution Without Paid Apple Developer Membership
 
@@ -488,7 +500,7 @@ Apple Silicon M1–M5 is intended; only M4 runtime is verified. arm64 is the rel
 Public screenshots must be actual native-window captures from isolated fictional demo data. No real cache/preferences/scans, personal metadata, actual software targets or destructive executor are permitted in demo mode. Demo markers independently block uninstall planning. VoiceOver can be called verified only if enabled, navigated and documented; AX inspection alone is insufficient.
 
 
-##26. Macventory1.0.0 product refinement (supersedes earlier conflicting UX)
+## 26. Macventory 1.0.0 product refinement (historical UX clarification)
 
 Remove name typing. Eligible previews show icon/full name/version/source/path/operation/retained data, readable wrapping/scrolling, an initially unchecked review checkbox, Cancel and Uninstall. Confirmation is single-use and bound to the exact plan UUID; fresh validation, source/target/protection/running checks remain mandatory. Reset acknowledgment for new plans, serialize requests and never let preview activation execute removal.
 
@@ -524,3 +536,18 @@ Data discovery is bounded to accessible user-Library sources. Exact bundle-ID co
 Single-click selects/details; double-click/Return and Uninstall… open the same application-name-titled management sheet. Right-click preserves Copy/Reveal actions, conditionally shows Force Quit for an exact running identity, and removes standalone Clear App Data/Manage Application entries. The sheet offers Force Quit, Clear App Data and Uninstall checkboxes with independent eligibility, full identity, targets, sizes, classification and explicit acknowledgment. Operation-specific confirmation is single-use. Completed, partial, failed and cancelled states have one OK button; no modal flag may outlive its content. All selected targets are validated before side effects; later steps stop on failure. Native Trash callbacks time out to an honest unknown-outcome error and cannot resume twice. Queued inventory updates occur after dismissal.
 
 The primary Leftover Data overview contains only groups with actual discovered candidates. History remains separate. Retrospective discovery is generic: supported Library direct-child identifiers, exact preference identities, container/saved-state paths and bounded local Info.plist/package manifests. Inventory and Launch Services exclude currently installed/reinstalled apps. Application grouping is default and may combine only identities with an independently recorded or metadata-backed product name; Identifier grouping remains technical and separate. Unknown retrospective ownership and stale history remain possible-only; shared containers remain protected. Search/confidence filters, exact paths, sizes, contents summaries, individual selection, Reveal, refresh and a visible trash-icon/text action are required. Partial scans preserve observations, show structured location/reason/permission/retry details, and block candidates only in an affected location; each selected target still receives fresh ownership, identity and installed-app preflight. Failed/cancelled scans disable cleanup. Successful cleanup refreshes affected groups exactly once. Synthetic QA cannot receive production executors; real destructive verification remains forbidden in this pass.
+
+## 29. Macventory v1.1.0 — current implemented scope
+
+This section supersedes earlier app-only cask limits, manager-wide guided-only assumptions, blanket no-privilege/network statements, process/data UI labels and same-name grouping rules. Earlier build-specific requirements remain historical context. Implementation is distinct from fixture, hosted-CI and real-effect validation.
+
+- **Unified review:** Direct Uninstall, Interactive Uninstall and Guided Only are per-installation capabilities; Protected / Blocked independently overrides unsafe/protected targets. Preview exposes exact identity/version/source, scope, evidence and verification. Opening review executes nothing. Immutable plan-bound acknowledgment is initially unchecked and single use; fresh checks and concurrency guards remain mandatory.
+- **Manager support:** eligible reviewed Homebrew app/font/owned-binary casks and single-version formulae can use official normal uninstall. Dependents, services, unsafe effects or ambiguous evidence require guidance/blocking. Exact MacPorts versions/variants and supported mutable current-user named manifest-v3 Nix profiles (Nix 2.28–2.35) have direct adapters. No force/zap/dependency override, store GC, receipt forgetting or strategy fallback is allowed. Missing Homebrew artifacts can cause normal uninstall to fail; success is not guaranteed.
+- **Bundle/vendor/provider scope:** independently eligible standalone, Store and limited PKG bundles can use recoverable native Trash after complete ownership/signing/path/process checks. Trusted embedded vendor tools take precedence for PKG/unmanaged apps; verified unique Steam App IDs can use targeted interactive handoff. Launch returns Waiting for User. Setapp/Toolbox remain guided where no trustworthy supported targeted integration is established. Bundle absence does not establish removal of every vendor component or personal file.
+- **Health:** manager registration, expected artifact presence and historical metadata are separate facts. Status/Attention Required expose missing payloads, partial, protected, historical and unverified observations without automatic repair or deletion. Separate physical copies remain separate; failed scans do not establish absence. Installation verification does not imply removal eligibility.
+- **Management/data:** the application-name sheet offers independently eligible Force Quit, Clear App Data and Uninstall. Validate all targets, verify process exit, move selected data, then uninstall; critical failure stops later actions. Interactive verification preserves prior step results and cannot verify a skipped/completed removal. Terminal results have one OK; refresh follows dismissal. Leftover Data is optional and separately confirmed, with individual exact-path review of possible/personal candidates and protected/shared blocking. Application grouping requires recorded embedded-parent relationships, never equal names/prefixes.
+- **Authorization:** only the narrow MacPorts route can request privileges. It requires trusted matching app/helper signing, authenticated XPC peers, explicit OS background-helper approval and per-request administrator rights checked before preflight and the final effect. Default ad-hoc builds cannot use this root route. Discovery/installation never registers a helper; nothing queues while approval is pending. No arbitrary privileged command/file/process API, password collection or protection bypass is permitted.
+- **Network and storage:** inventory works locally without a backend or network. Explicit official-guidance opening uses a bounded ephemeral HTTPS HEAD check with same-provider redirects, followed by browser navigation. Page text is never executed. Application cache/preferences/identity/removal records and explicit exports are distinct from separately confirmed manager/Trash effects. Retained identity names do not confer ownership.
+- **Diagnostics and distribution:** synthetic QA uses isolated state, persistent QA markers and injected effects. Hosted trace evidence is created by the app in private bounded files and read by the sandboxed controller; it does not alter selection behavior. Production packaging remains arm64, ad hoc and unnotarized, including helper metadata and private compiler-path checks. Full CI must validate the exact final commit with all 16 primary GUI cases and diagnostics; package-only/isolated runs are insufficient.
+
+Current source/removal matrices: [source support](Docs/SOURCE_SUPPORT.md), [uninstall](Docs/UNINSTALL.md). Actual provider removal, native Trash/restoration, signed-helper lifecycle, minimum-OS runtime, clean-machine Gatekeeper and full VoiceOver remain unverified. No release readiness follows from compilation or synthetic success. Version **1.1.0 / build 108** stays unchanged during documentation preparation; the owner creates the tag/release only after final CI and applicable release review. See [release sequence](Docs/RELEASING.md).

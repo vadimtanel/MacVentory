@@ -1,15 +1,19 @@
 name: Build and test Macventory
 on:
   push:
+    # The open stabilization PR supplies focused validation on synchronization.
+    # Avoid a duplicate push run; full validation remains an explicit dispatch.
+    branches-ignore:
+      - release/v1.1.0-stabilization
   pull_request:
   workflow_dispatch:
     inputs:
       selection_scenario:
-        description: Temporary selection diagnostics; run isolated/paths before full
+        description: Temporary GUI diagnostics; startup verifies the repaired original cold launch
         required: true
         default: isolated
         type: choice
-        options: [isolated, paths, after-layout, after-headers, full]
+        options: [startup, isolated, paths, after-layout, after-headers, full]
 permissions:
   contents: read
 defaults:
@@ -25,8 +29,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify runner and pinned toolchain
         run: bash scripts/verify-ci-toolchain.sh
+      - name: Synthetic CI reporting regressions
+        run: python3 -m unittest discover -s Tests/CI -p 'test_*.py'
       - name: Swift package build
         run: bash scripts/swift-tool.sh build 2>&1 | tee build/verification/swift-build.log
       - name: Swift package tests (synthetic fixtures)
@@ -67,64 +75,72 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   ui:
-    name: XCUITest (synthetic inventory and simulated removal)
+    name: XCUITest (synthetic inventory and simulated removal) [${{ matrix.startup_arm }}]
     runs-on: macos-26
     needs: native
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Startup runs only the original cold-launch case; no comparison arms.
+        # Other scenarios retain one job and their complete existing coverage.
+        startup_arm: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.selection_scenario == 'startup' && '["original"]' || '["suite"]') }}
     env:
-      SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || 'full' }}
+      SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || github.head_ref == 'release/v1.1.0-stabilization' && 'isolated' || 'full' }}
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      STARTUP_ARM: ${{ matrix.startup_arm }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify runner and pinned toolchain
         run: bash scripts/verify-ci-toolchain.sh
       - name: XCUITest
         id: gui
-        # Keep the primary build/package result independent of hosted GUI availability.
-        # An unsuccessful attempt is never reported as a passing GUI test.
-        continue-on-error: true
+        # This step must visibly fail. Subsequent evidence steps use always().
         timeout-minutes: 25
-        run: |
-          selected=MacventoryUITests/MacventoryUITests
-          target=testExplicitExecutionLevelsAndInteractiveVerification
-          filters=("-only-testing:$selected/$target")
-          result_bundle="build/verification/Selection-$SELECTION_SCENARIO.xcresult"
-          case "$SELECTION_SCENARIO" in
-            isolated) ;;
-            paths) filters=("-only-testing:MacventoryUITests/MacventorySelectionPathDiagnostics") ;;
-            after-layout) filters+=("-only-testing:$selected/testDetailsActionsStayVisibleAcrossLayoutsAndLongMetadata") ;;
-            after-headers) filters+=("-only-testing:$selected/testAllNativeHeaderSortsPreserveSelection") ;;
-            full) filters=("-only-testing:$selected"); result_bundle=build/verification/UITests.xcresult ;;
-            *) exit 2 ;;
-          esac
-          printf '%s\n' "$SELECTION_SCENARIO" > build/verification/selection-scenario.txt
-          git rev-parse HEAD > build/verification/tested-head.txt
-          set +e
-          xcodebuild -project Macventory.xcodeproj -scheme Macventory \
-            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
-            -resultBundlePath "$result_bundle" \
-            "${filters[@]}" -parallel-testing-enabled NO \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test \
-            2>&1 | tee build/verification/xcode-ui-tests.log
-          results=("${PIPESTATUS[@]}")
-          set -e
-          # A cancelled shell can leave the app's test runner alive. Only a normal
-          # Xcode terminal result permits another GUI diagnostic on this desktop.
-          if [[ "${results[0]}" == 0 || "${results[0]}" == 65 ]] && \
-             [[ -f "$result_bundle/Info.plist" ]] && \
-             grep -Eq '^\*\* TEST (SUCCEEDED|FAILED) \*\*$' build/verification/xcode-ui-tests.log; then
-            echo 'primary_finished=true' >> "$GITHUB_OUTPUT"
-          fi
-          if [[ "${results[0]}" != 0 ]]; then exit "${results[0]}"; fi
-          exit "${results[1]}"
+        run: bash scripts/run-ui-tests.sh
       - name: Verify actual GUI test count, outcome and requested order
         id: sequence
         if: always()
-        run: python3 scripts/verify-ui-selection-run.py "$SELECTION_SCENARIO" build/verification/xcode-ui-tests.log | tee build/verification/gui-sequence.json
+        run: |
+          python3 scripts/verify-ui-selection-run.py "$SELECTION_SCENARIO" build/verification/xcode-ui-tests.log \
+            --expected-sha "$TESTED_SHA" --tested-head build/verification/tested-head.txt \
+            --recorded-scenario build/verification/selection-scenario.txt \
+            --startup-arm "$STARTUP_ARM" --recorded-startup-arm build/verification/startup-arm.txt \
+            | tee build/verification/gui-sequence.json
+      - name: Export primary xcresult evidence
+        id: evidence
+        if: always() && steps.gui.outputs.primary_finished == 'true'
+        run: |
+          result_bundle="build/verification/Selection-$SELECTION_SCENARIO.xcresult"
+          if [[ "$SELECTION_SCENARIO" == full ]]; then result_bundle=build/verification/UITests.xcresult; fi
+          evidence_exit=0
+          xcrun xcresulttool get test-results summary --path "$result_bundle" > build/verification/xcresult-summary.json || evidence_exit=1
+          xcrun xcresulttool get test-results tests --path "$result_bundle" > build/verification/xcresult-tests.json || evidence_exit=1
+          if [[ "$SELECTION_SCENARIO" == startup ]]; then
+            if method="$(python3 scripts/verify-ui-selection-run.py startup /dev/null --startup-arm "$STARTUP_ARM" --print-startup-method)"; then
+              xcrun xcresulttool get test-results activities --path "$result_bundle" \
+                --test-id "MacventoryStartupDiagnostics/$method()" \
+                > build/verification/startup-activities.json || evidence_exit=1
+            else
+              evidence_exit=1
+            fi
+          elif [[ "$SELECTION_SCENARIO" != paths ]]; then
+            xcrun xcresulttool get test-results activities --path "$result_bundle" \
+              --test-id 'MacventoryUITests/testExplicitExecutionLevelsAndInteractiveVerification()' \
+              > build/verification/selection-activities.json || evidence_exit=1
+          fi
+          xcrun xcresulttool export attachments --path "$result_bundle" \
+            --output-path build/verification/primary-attachments || evidence_exit=1
+          exit "$evidence_exit"
       - name: Compare synthetic native header proxies on the hosted runtime
+        id: header_proxies
         if: always() && steps.gui.outputs.primary_finished == 'true' && env.SELECTION_SCENARIO == 'full'
         timeout-minutes: 5
         run: bash scripts/probe-header-proxies.sh "$PWD/build/DerivedData/Build/Products/Debug"
       - name: Diagnose Source header with actual element-relative mouse clicks
+        id: pointer
         if: always() && steps.gui.outputs.primary_finished == 'true' && env.SELECTION_SCENARIO == 'full'
         timeout-minutes: 3
         run: |
@@ -140,21 +156,27 @@ jobs:
           GUI_OUTCOME: ${{ steps.gui.outcome }}
           PRIMARY_FINISHED: ${{ steps.gui.outputs.primary_finished }}
           SEQUENCE_OUTCOME: ${{ steps.sequence.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+          HEADER_OUTCOME: ${{ steps.header_proxies.outcome }}
+          POINTER_OUTCOME: ${{ steps.pointer.outcome }}
         run: |
           if [[ "$PRIMARY_FINISHED" != true ]]; then
             echo 'Primary Xcode execution did not finalize normally. Further GUI diagnostics were withheld to avoid overlapping test processes; retained xcresult evidence may be incomplete.' | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          if [[ "$GUI_OUTCOME" == success && "$PRIMARY_FINISHED" == true && "$SEQUENCE_OUTCOME" == success ]]; then
-            echo "Primary XCUITest scenario '$SELECTION_SCENARIO' passed using synthetic fixtures. Inspect gui-sequence.json for actual counts; only 'full' verifies the 16-case primary suite." | tee -a "$GITHUB_STEP_SUMMARY"
+          diagnostics_pass=true
+          if [[ "$EVIDENCE_OUTCOME" != success ]]; then diagnostics_pass=false; fi
+          if [[ "$SELECTION_SCENARIO" == full && ( "$HEADER_OUTCOME" != success || "$POINTER_OUTCOME" != success ) ]]; then diagnostics_pass=false; fi
+          if [[ "$GUI_OUTCOME" == success && "$PRIMARY_FINISHED" == true && "$SEQUENCE_OUTCOME" == success && "$diagnostics_pass" == true ]]; then
+            echo "Primary XCUITest scenario '$SELECTION_SCENARIO' passed using synthetic fixtures. Inspect gui-sequence.json for actual counts; only 'full' verifies all 16 original cases plus the selection regression. Independent diagnostics must also pass." | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::XCUITest did not validate (execution: $GUI_OUTCOME, sequence: $SEQUENCE_OUTCOME, finalized: $PRIMARY_FINISHED). Inspect the uploaded log and xcresult."
-            echo "Primary XCUITest scenario '$SELECTION_SCENARIO' did NOT validate (execution: $GUI_OUTCOME, sequence: $SEQUENCE_OUTCOME, finalized: $PRIMARY_FINISHED). Primary arm64 checks are independent." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::error::XCUITest did not validate (execution: $GUI_OUTCOME, sequence: $SEQUENCE_OUTCOME, finalized: $PRIMARY_FINISHED, evidence: $EVIDENCE_OUTCOME, headers: $HEADER_OUTCOME, pointer: $POINTER_OUTCOME). Inspect the uploaded log and xcresult."
+            echo "GUI scenario '$SELECTION_SCENARIO' did NOT validate (execution: $GUI_OUTCOME, sequence: $SEQUENCE_OUTCOME, finalized: $PRIMARY_FINISHED, evidence: $EVIDENCE_OUTCOME, headers: $HEADER_OUTCOME, pointer: $POINTER_OUTCOME). Native success is insufficient for release validation." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: verification-ui
+          name: verification-ui${{ matrix.startup_arm != 'suite' && format('-startup-{0}', matrix.startup_arm) || '' }}
           path: build/verification/
           if-no-files-found: warn
           retention-days: 14

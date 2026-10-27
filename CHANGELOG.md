@@ -1,6 +1,56 @@
 # Changelog
 
-## Unreleased
+## Macventory v1.1.0 — Uninstall & Installation Health (upcoming)
+
+Version **1.1.0 / build 108** is prepared in source; no v1.1.0 tag or GitHub Release has been published. These changes describe the implementation since the public [v1.0.0 tag](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0), not completed release validation.
+
+### New Features
+
+- Unified removal previews classify each installation as **Direct Uninstall**, **Interactive Uninstall** or **Guided Only**, with an independent **Protected / Blocked** override and explicit scope/verification details.
+- Installation-health Status column, status filtering and **Attention Required** Smart View distinguish current registration, missing/broken payloads, partial states, unverified observations and historical receipts.
+- Homebrew missing-app detection retains exact installed cask tokens and expected paths instead of presenting retained registration as a healthy app. Package-only installations remain valid without a GUI bundle.
+- Direct adapters for eligible Homebrew formulae/casks, exact MacPorts versions/variants and supported modern mutable Nix profile elements; interactive verified Steam App ID handoff and trusted embedded vendor uninstallers; independently eligible limited PKG/App Store bundle Trash.
+- Narrow MacPorts authorization helper implementation requiring matching trusted app/helper signing and per-request administrator authorization for root operations. Default ad-hoc builds cannot use this privileged route.
+
+### Improvements
+
+- Source-specific review/postflight distinguish registration removal, bundle-only removal, Waiting for User, partial, already-absent, failed and unknown results. **Verify Removal** preserves earlier combined-operation results; guided work can be followed by **Refresh Installation Status**.
+- Improved cask app/font/owned-binary mapping, renamed/custom app directories, multiple artifacts, physical-copy identity and source conflicts. Manager version and app version remain distinct.
+- Application management retains independently eligible Force Quit, Clear App Data and Uninstall actions. Leftover Data remains an optional, separately confirmed review, including after verified removal.
+- Installation details, compact action layout, health accessibility labels and UI diagnostics expose evidence and scope. Synthetic selection tracing uses app-owned private files readable by the sandboxed hosted controller.
+- Icon generation preserves supplied artwork while improving sizing/Caskroom bundle-icon handling. Packaging includes helper metadata, strips private compiler paths from both executables and validates exact source-manifest contents.
+
+### Bug Fixes
+
+- Prevented changed cask mappings/artifact presence from redirecting a reviewed removal to another physical copy; rejected ambiguous multiple-version cask removal.
+- Corrected Nix profile-conflict detection, retained non-app cask artifact warnings and stale/historical reconciliation. Separate copies remain separate regardless of names/identifiers.
+- Bound vendor/Steam launches to the selected physical client/tool; restricted generic vendor discovery to embedded associations and strengthened executable fingerprints.
+- Preserved earlier management-step results during interactive verification, prevented verification of skipped/completed uninstall steps and disabled dismissal while verification is busy.
+- Fixed hosted diagnostic transport across processes and read-only runner sandbox boundaries; these corrections alone do not establish resolution of the original GUI selection regression.
+- Corrected long-identifier XCTest queries and native row-coordinate delivery. Failure evidence tolerates absent Details; opt-in native notification stacks retain selection-transition callers. Stabilization PR updates run the focused pair at their exact head SHA. The native selection rollback remains unresolved; these test/CI corrections are not a production selection-fix claim.
+
+### Safety and Security
+
+- Fresh immutable plans, initially unchecked acknowledgment, single-use confirmation and independent ownership/process/path checks remain mandatory. Health warnings never grant removal authority.
+- Authenticated both XPC peers and added per-request OS administrator rights before preflight and immediately before privileged effects; strengthened MacPorts payload/ancestor/ACL checks and bounded replay handling.
+- Protected staged running cask bundles and the actual running Macventory copy; rechecked unrelated manager registrations and all registered Steam libraries when verifying results.
+- Failed operations never switch strategies or invoke force, zap, dependency removal, garbage collection, receipt forgetting or unreviewed cleanup.
+
+### Known Limitations
+
+- v1.1.0 remains unpublished. Complete hosted CI, including all 16 primary GUI cases and independent diagnostics, must pass on the final documentation/source commit before tagging; native-only or earlier-commit success is insufficient.
+- Real provider removal, native Finder Trash, vendor/Steam completion and signed-helper deployment/lifecycle remain unverified. Synthetic tests establish orchestration/validation contracts, not destructive safety.
+- Setapp and Toolbox use guidance where trustworthy targeted integration is unavailable. PKG receipts cannot be inverted into uninstall scripts; bundle-only removal may leave external components/data.
+- Normal Homebrew uninstall can fail when an expected app is missing; no forced reconciliation is attempted. Nix direct support is limited to named manifest-v3 elements in supported mutable current-user profiles, Nix 2.28–2.35.
+- Distribution is arm64 and ad-hoc signed, without Developer ID/notarization. macOS 13.0 is configured, not runtime-validated; Intel/universal, clean-machine Gatekeeper and full VoiceOver are unverified. Privileged MacPorts removal is unavailable with ad-hoc signing.
+
+See [current uninstall support](Docs/UNINSTALL.md), [verification](Docs/VERIFICATION.md) and [release process](Docs/RELEASING.md).
+
+## v1.0.0 — first publicly released version
+
+The [public v1.0.0 tag](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0) identifies the first published release. The notes below retain their original local/unreleased milestone labels and build identifiers; they are not separately published v1.0.0 releases. Application management and Leftover Data were already present at this public baseline.
+
+## Historical local development notes — originally Unreleased
 
 - Build107: added Command-click inventory sidebar category unions with search/filter preservation.
 - Improved cleanup permission diagnostics/recovery guidance and made whole-folder scope and personal-discovery status explicit.

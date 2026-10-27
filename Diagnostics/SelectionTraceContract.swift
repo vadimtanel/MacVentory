@@ -50,7 +50,7 @@ import AppKit
             owned.append(directory.url)
             return (nonce, directory)
         }
-        func child(_ nonce: String, diagnostics: Bool = true, wait: Bool = false) throws -> (Process, Pipe?) {
+        func child(_ nonce: String, diagnostics: Bool = true, wait: Bool = false, environmentHandoff: Bool = true) throws -> (Process, Pipe?) {
             let temporary = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
                 .appendingPathComponent("MacventoryTraceContract-" + UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false,
@@ -58,10 +58,13 @@ import AppKit
             owned.append(temporary)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
-            process.arguments = ["--child", "--ui-testing", "--qa-selection-trace-id", nonce] +
+            process.arguments = ["--child", "--ui-testing"] +
                 (diagnostics ? ["--qa-selection-diagnostics"] : []) + (wait ? ["--wait-for-cleanup"] : [])
             var environment = ProcessInfo.processInfo.environment
             environment["TMPDIR"] = temporary.path + "/" // Child only; never changes the developer's environment.
+            environment.removeValue(forKey: QATraceHandoff.selectionEnvironmentKey)
+            if environmentHandoff { environment[QATraceHandoff.selectionEnvironmentKey] = nonce }
+            else { process.arguments! += ["--qa-selection-trace-id", nonce] }
             process.environment = environment
             let control = wait ? Pipe() : nil
             let ready = wait ? Pipe() : nil
@@ -174,6 +177,10 @@ import AppKit
         let disabledLocation = try QATraceHandoff.location(disabledNonce)
         precondition(!FileManager.default.fileExists(atPath: disabledLocation.path))
         rejected({ _ = try QATraceHandoff.Directory(disabledNonce) }, code: Int(ENOENT))
+        // A legacy positional nonce must not silently bootstrap an environment handoff.
+        let legacyNonce = UUID().uuidString
+        _ = try child(legacyNonce, environmentHandoff: false)
+        rejected({ _ = try QATraceHandoff.Directory(legacyNonce) }, code: Int(ENOENT))
         // Exercise the actual app-side normal-termination observer in the separate writer.
         try control!.fileHandleForWriting.write(contentsOf: Data([1]))
         try control!.fileHandleForWriting.close()

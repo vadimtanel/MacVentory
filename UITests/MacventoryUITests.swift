@@ -1,5 +1,17 @@
 import XCTest
 import Darwin
+import AppKit
+import CoreGraphics
+
+// Read-only app-created evidence. This never selects a row or changes focus/state.
+private func selectionEvents(_ nonce: String) -> [[String: Any]] {
+    guard let directory = try? QATraceHandoff.Directory(nonce),
+          let data = try? directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit) else { return [] }
+    // A read can end during an append; only complete JSON lines are observations.
+    return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap {
+        (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+    }
+}
 
 @MainActor
 private func requireFixtureSidebar(_ app: XCUIApplication) throws {
@@ -26,58 +38,91 @@ private func requireFixtureSidebar(_ app: XCUIApplication) throws {
 }
 
 @MainActor
-private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil) throws -> XCUIApplication {
+private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil,
+                                activateAfterLaunch: Bool = true, selectionDiagnostics: Bool = true,
+                                startupDiagnostics: Bool = false) throws -> XCUIApplication {
     let app = XCUIApplication()
     _ = try XCTUnwrap(arguments.contains("--ui-testing") ? app : nil, "GUI tests require synthetic inventory and removal")
+    if startupDiagnostics {
+        _ = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "org.vadimtanel.Macventory").isEmpty ? app : nil,
+                          "Cold-start arm requires no existing Macventory process; do not terminate a pre-existing application")
+    }
     app.launchArguments = arguments
     if let testCase, arguments.contains("--qa-execution-levels") {
         let nonce = UUID().uuidString
         let destination = try QATraceHandoff.location(nonce) // Derive only: the sandboxed runner cannot mkdir here.
-        app.launchArguments += ["--qa-selection-diagnostics", "--qa-selection-trace-id", nonce]
+        let startupNonce = UUID().uuidString
+        if selectionDiagnostics {
+            app.launchArguments += ["--qa-selection-diagnostics"]
+            app.launchEnvironment[QATraceHandoff.selectionEnvironmentKey] = nonce
+        }
+        if startupDiagnostics {
+            app.launchArguments += ["--qa-startup-diagnostics"]
+            // Keep both diagnostic nonces out of AppKit's argument domain.
+            app.launchEnvironment[QATraceHandoff.startupEnvironmentKey] = startupNonce
+        }
         testCase.addTeardownBlock {
-            XCTContext.runActivity(named: "QA-only native selection observations") { activity in
-                func attach(_ data: Data, _ name: String) {
-                    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
-                    attachment.name = name
-                    attachment.lifetime = .keepAlways
-                    activity.add(attachment)
-                }
-                var controller: [String: Any] = QATraceHandoff.processPaths
-                controller["destination"] = destination.path
-                controller["nonce"] = nonce
-                controller["pid"] = ProcessInfo.processInfo.processIdentifier
-                func failure(_ stage: String, _ error: Error) {
-                    controller[stage] = ["domain": (error as NSError).domain, "code": (error as NSError).code,
-                                         "error": error.localizedDescription]
-                    XCTFail("Trace handoff \(stage) failed: \(error.localizedDescription)")
-                }
-                do {
-                    let directory = try QATraceHandoff.Directory(nonce)
-                    controller["open"] = "success"
+            if startupDiagnostics {
+                recordStartupDiscovery(app, phase: "teardown before normal Quit")
+                XCTContext.runActivity(named: "Independent application startup lifecycle") { activity in
                     do {
-                        let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
-                        attach(startup, "selection-startup.jsonl")
-                        controller["startupRead"] = "success"
-                        let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
-                            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
-                        }
-                        XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
-                                      "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
-                    } catch { failure("startupRead", error) }
+                        let directory = try QATraceHandoff.Directory(startupNonce)
+                        let data = try directory.read(QATraceHandoff.lifecycleName, limit: QATraceHandoff.traceLimit)
+                        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                        attachment.name = "startup-lifecycle.jsonl"; attachment.lifetime = .keepAlways
+                        activity.add(attachment)
+                    } catch { XCTFail("Independent startup trace read failed: \(error)") }
+                }
+            }
+            if selectionDiagnostics {
+                XCTContext.runActivity(named: "QA-only native selection observations") { activity in
+                    func attach(_ data: Data, _ name: String) {
+                        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+                        attachment.name = name
+                        attachment.lifetime = .keepAlways
+                        activity.add(attachment)
+                    }
+                    var controller: [String: Any] = QATraceHandoff.processPaths
+                    controller["destination"] = destination.path
+                    controller["nonce"] = nonce
+                    controller["pid"] = ProcessInfo.processInfo.processIdentifier
+                    func failure(_ stage: String, _ error: Error) {
+                        controller[stage] = ["domain": (error as NSError).domain, "code": (error as NSError).code,
+                                             "error": error.localizedDescription]
+                        XCTFail("Trace handoff \(stage) failed: \(error.localizedDescription)")
+                    }
                     do {
-                        let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
-                        attach(data, "native-selection.jsonl")
-                        controller["traceRead"] = "success"
-                        let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
-                            (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
-                        }
-                        XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
-                                      "Trace created but native observer was not created/attached; inspect startup and trace stages")
-                    } catch { failure("traceRead", error) }
-                } catch { failure("open", error) }
-                // Capture reader evidence even when directory open/read fails.
-                do { attach(try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys]), "selection-controller.json") }
-                catch { XCTFail("Could not serialize trace controller evidence: \(error)") }
+                        let directory = try QATraceHandoff.Directory(nonce)
+                        controller["open"] = "success"
+                        do {
+                            let startup = try directory.read(QATraceHandoff.startupName, limit: QATraceHandoff.startupLimit)
+                            attach(startup, "selection-startup.jsonl")
+                            controller["startupRead"] = "success"
+                            let stages = try String(decoding: startup, as: UTF8.self).split(separator: "\n").map {
+                                try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+                            }
+                            XCTAssertTrue(stages.contains { $0?["stage"] as? String == "trace.ready" },
+                                          "App initialization did not reach trace.ready; inspect selection-startup.jsonl")
+                        } catch { failure("startupRead", error) }
+                        do {
+                            let data = try directory.read(QATraceHandoff.traceName, limit: QATraceHandoff.traceLimit)
+                            attach(data, "native-selection.jsonl")
+                            controller["traceRead"] = "success"
+                            let events = try String(decoding: data, as: UTF8.self).split(separator: "\n").map {
+                                (try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["event"] as? String
+                            }
+                            // Startup diagnostics report their actual launch stage;
+                            // a missing window does not owe us a table observer.
+                            if !startupDiagnostics {
+                                XCTAssertTrue(events.contains("observer.created") && events.contains("window.attached"),
+                                              "Trace created but native observer was not created/attached; inspect startup and trace stages")
+                            }
+                        } catch { failure("traceRead", error) }
+                    } catch { failure("open", error) }
+                    // Capture reader evidence even when directory open/read fails.
+                    do { attach(try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys]), "selection-controller.json") }
+                    catch { XCTFail("Could not serialize trace controller evidence: \(error)") }
+                }
             }
             // Only this synthetic fixture receives a normal Quit, after attachment capture.
             // Its app-side termination observer owns cleanup; the read-only runner never unlinks.
@@ -87,21 +132,53 @@ private func launchSyntheticApp(arguments: [String], testCase: XCTestCase? = nil
                 if app.state == .runningForeground { app.typeKey("q", modifierFlags: .command) }
                 XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "Synthetic fixture must quit normally for private trace cleanup")
             }
-            do {
-                _ = try QATraceHandoff.Directory(nonce)
-                XCTFail("Synthetic app did not clean up its private trace directory")
-            } catch {
-                XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
-                XCTAssertEqual((error as NSError).code, Int(ENOENT), "Trace cleanup must remove only this session directory")
+            for id in (selectionDiagnostics ? [nonce] : []) + (startupDiagnostics ? [startupNonce] : []) {
+                do {
+                    _ = try QATraceHandoff.Directory(id)
+                    XCTFail("Synthetic app did not clean up its private trace directory")
+                } catch {
+                    XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
+                    XCTAssertEqual((error as NSError).code, Int(ENOENT), "Trace cleanup must remove only this session directory")
+                }
             }
         }
     }
     app.launch()
-    app.activate()
-    _ = try XCTUnwrap(app.windows.firstMatch.waitForExistence(timeout: 10) ? app : nil)
+    if activateAfterLaunch { app.activate() }
+    let discovered = app.windows.firstMatch.waitForExistence(timeout: 10)
+    if startupDiagnostics { recordStartupDiscovery(app, phase: "window wait completed", discovered: discovered) }
+    _ = try XCTUnwrap(discovered ? app : nil,
+                      "Startup stage: XCTest must discover the real inventory window within the existing 10-second bound")
     XCTAssertEqual(app.state, .runningForeground)
     try requireFixtureSidebar(app)
     return app
+}
+
+@MainActor
+private func recordStartupDiscovery(_ app: XCUIApplication, phase: String, discovered: Bool? = nil) {
+    XCTContext.runActivity(named: "XCTest and native process discovery — " + phase) { activity in
+        let processes = NSRunningApplication.runningApplications(withBundleIdentifier: "org.vadimtanel.Macventory")
+        let pids = Set(processes.map { Int($0.processIdentifier) })
+        let windows = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .filter { pids.contains($0[kCGWindowOwnerPID as String] as? Int ?? -1) }
+            .map { value in value.filter { [kCGWindowNumber as String, kCGWindowBounds as String,
+                                           kCGWindowIsOnscreen as String, kCGWindowLayer as String].contains($0.key) } }
+        var controller: [String: Any] = ["phase": phase, "uptime": ProcessInfo.processInfo.systemUptime,
+            "xctestState": app.state.rawValue, "xctestWindowCount": app.windows.count,
+            "nativeProcesses": processes.map { ["pid": Int($0.processIdentifier), "active": $0.isActive,
+                "hidden": $0.isHidden, "finishedLaunching": $0.isFinishedLaunching,
+                "activationPolicy": $0.activationPolicy.rawValue] as [String: Any] }, "cgWindows": windows]
+        if let discovered { controller["windowWaitSucceeded"] = discovered }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: controller, options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+            attachment.name = "startup-controller.json"; attachment.lifetime = .keepAlways; activity.add(attachment)
+        } catch { XCTFail("Startup controller serialization failed: \(error)") }
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "startup-AX-hierarchy"; hierarchy.lifetime = .keepAlways; activity.add(hierarchy)
+        let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screen.name = "startup-screen"; screen.lifetime = .keepAlways; activity.add(screen)
+    }
 }
 
 @MainActor
@@ -146,7 +223,7 @@ final class MacventoryUITests: XCTestCase {
             try clickVisible(search)
             search.typeKey("a", modifierFlags: .command)
             search.typeText(name)
-            XCTAssertEqual(search.value as? String, name)
+            try requireSearch(name, in: app)
             try openDetailsReview(name, in: app)
             let sheet = app.sheets.firstMatch
             XCTAssertTrue(sheet.waitForExistence(timeout: 5))
@@ -180,6 +257,38 @@ final class MacventoryUITests: XCTestCase {
         try clickVisible(app.sheets.buttons["management.cancel"])
     }
 
+    func testSearchSelectionAndDetailsContract() throws {
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self)
+        // Both queries begin in the active native search editor. One native row
+        // click must select the exact installation; no Tab, retry or injected ID.
+        for name in ["Example App", "Interactive Vendor Example"] {
+            let search = app.searchFields.firstMatch
+            try clickVisible(search)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText(name)
+            try requireSearch(name, in: app)
+            _ = try selectInventoryItem(name, in: app)
+            XCTAssertFalse(app.sheets.firstMatch.exists, "Selection alone must not open management")
+        }
+    }
+
+    private func requireSearch(_ query: String, in app: XCUIApplication,
+                               file: StaticString = #filePath, line: UInt = #line) throws {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", query), object: app.searchFields.firstMatch)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [expectation], timeout: 5) == .completed ? app : nil,
+                          "Selection stage 1: the search field must contain the requested query", file: file, line: line)
+    }
+
+    private func requireSelectionEvent(_ stage: String, nonce: String, after sequence: Int,
+                                       matching predicate: @escaping ([String: Any]) -> Bool,
+                                       file: StaticString = #filePath, line: UInt = #line) throws {
+        let observation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            selectionEvents(nonce).contains { ($0["sequence"] as? Int ?? 0) > sequence && predicate($0) }
+        }, object: nil)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [observation], timeout: 5) == .completed ? stage : nil,
+                          stage + "; inspect native-selection.jsonl and the retained hierarchy", file: file, line: line)
+    }
+
     private func assertText(_ text: String, in container: XCUIElement,
                             file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(container.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)).firstMatch.waitForExistence(timeout: 5), file: file, line: line)
@@ -187,12 +296,19 @@ final class MacventoryUITests: XCTestCase {
 
     private func selectedDetails(_ name: String, in app: XCUIApplication,
                                  file: StaticString = #filePath, line: UInt = #line) throws -> XCUIElement {
-        let row = inventoryTable(app).children(matching: .outlineRow).containing(.staticText, identifier: name).firstMatch
+        let table = inventoryTable(app)
+        let text = table.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", name, name)).firstMatch
+        _ = try XCTUnwrap(text.exists && text.identifier.hasPrefix("inventory.name.") ? text : nil,
+                          "Selection stage 2: identify the selected installation by its stable ID", file: file, line: line)
+        let row = table.children(matching: .outlineRow).containing(NSPredicate(
+            format: "elementType == %@ AND identifier == %@",
+            NSNumber(value: XCUIElement.ElementType.staticText.rawValue), text.identifier)).element
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: row)
         let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
         let title = details.staticTexts["inventory.details.title"]
         let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@", name, name), object: title)
-        let result = XCTWaiter.wait(for: [selected, identity], timeout: 5)
+        let rowResult = XCTWaiter.wait(for: [selected], timeout: 5)
+        let result = rowResult == .completed ? XCTWaiter.wait(for: [identity], timeout: 5) : rowResult
         if result != .completed {
             let attachment = XCTAttachment(string: app.debugDescription)
             attachment.name = "Selected inventory item and Details identity"
@@ -200,7 +316,8 @@ final class MacventoryUITests: XCTestCase {
             add(attachment)
         }
         return try XCTUnwrap(result == .completed && details.exists ? details : nil,
-                             "The real selected row and Details title must both match \(name)", file: file, line: line)
+                             rowResult == .completed ? "Selection stage 6: Details must identify \(name)" :
+                                "Selection stage 4: the native inventory row must remain selected for \(name)", file: file, line: line)
     }
 
     private func openDetailsReview(_ name: String, in app: XCUIApplication,
@@ -231,27 +348,73 @@ final class MacventoryUITests: XCTestCase {
 
     private func selectInventoryItem(_ name: String, in app: XCUIApplication,
                                      file: StaticString = #filePath, line: UInt = #line) throws -> XCUIElement {
-        app.activate()
+        var completed = false
+        defer {
+            if !completed { recordDetailsInteraction(app, phase: name + " — selection contract failed") }
+        }
+        // Launch already establishes foreground state. Do not reactivate an
+        // already active app between editing search and its selection gesture.
         XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
         let table = inventoryTable(app)
-        let text = table.staticTexts[name].firstMatch
-        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && table.staticTexts.matching(identifier: name).count == 1 ? text : nil,
-                          "Resolve one exact fixture name in the native table", file: file, line: line)
+        let texts = table.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", name, name))
+        let text = texts.firstMatch
+        _ = try XCTUnwrap(text.waitForExistence(timeout: 5) && texts.count == 1 && text.identifier.hasPrefix("inventory.name.") ? text : nil,
+                          "Selection stage 2: resolve one identified installation name in the native table", file: file, line: line)
+        let itemID = String(text.identifier.dropFirst("inventory.name.".count))
+        let token = QASelectionDiagnostics.token(itemID)
+        let row = table.children(matching: .outlineRow).containing(NSPredicate(
+            format: "elementType == %@ AND identifier == %@",
+            NSNumber(value: XCUIElement.ElementType.staticText.rawValue), text.identifier)).element
         let viewport = inventoryViewport(table, in: app)
-        let coordinate = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let frame = text.frame, point = coordinate.screenPoint
-        let evidence = XCTAttachment(string: "name=\(name) state=\(app.state.rawValue) hittable=\(text.isHittable) " +
-            "text=\(frame) window/table/viewport=\([app.windows.firstMatch.frame, table.frame, viewport.frame]) point=\(point)")
+        _ = try XCTUnwrap(row.exists && viewport.exists ? row : nil, "Selection stage 2: exact native row and viewport must exist", file: file, line: line)
+        let frame = row.frame
+        let point = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).screenPoint
+        let evidence = XCTAttachment(string: "name=\(name) id=\(token) state=\(app.state.rawValue) hittable=\(row.isHittable) " +
+            "row=\(frame) text=\(text.frame) window/table/viewport=\([app.windows.firstMatch.frame, table.frame, viewport.frame]) point=\(point)\n" + app.debugDescription)
         evidence.name = name + " — native row selection pointer geometry"
         evidence.lifetime = .keepAlways
         add(evidence)
         _ = try XCTUnwrap(app.state == .runningForeground && viewport.exists && !app.sheets.firstMatch.exists && !app.alerts.firstMatch.exists &&
             frame.width > 0 && frame.height > 0 && point.x.isFinite && point.y.isFinite && frame.contains(point) &&
-            [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(frame) && $0.contains(point) } ? text : nil,
-            "Select through the exact visible cell text, never a clipped row container or guessed point", file: file, line: line)
-        coordinate.click()
-        // A sent click is not proof of selection. No retry or state injection.
-        return try selectedDetails(name, in: app, file: file, line: line)
+            [app.windows.firstMatch.frame, table.frame, viewport.frame].allSatisfy { $0.contains(point) && $0.contains(text.frame) } ? row : nil,
+            "Selection stage 2: native row center and identified name must be visible, without a modal overlay", file: file, line: line)
+        let nonce = app.launchEnvironment[QATraceHandoff.selectionEnvironmentKey]
+        let previousEvents = nonce.map(selectionEvents) ?? []
+        let before = previousEvents.last?["sequence"] as? Int ?? 0
+        let wasSelected = row.isSelected
+        let wasObserved = previousEvents.last { $0["event"] as? String == "selection.observed" }?["value"] as? String == token
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click() // One native row-center click.
+        if let nonce {
+            try requireSelectionEvent("Selection stage 3: the mouse must hit the intended native row", nonce: nonce, after: before, matching: { event in
+                guard event["event"] as? String == "event.beforeDelivery", event["eventType"] as? Int == 1,
+                      let ids = event["rowIDs"] as? [String], let tables = event["tables"] as? [[String: Any]] else { return false }
+                return tables.contains { table in
+                    guard let index = table["rowAtPoint"] as? Int, ids.indices.contains(index) else { return false }
+                    return ids[index] == token
+                }
+            }, file: file, line: line)
+            if !wasSelected {
+                try requireSelectionEvent("Selection stage 4: native selection must notify the target row", nonce: nonce, after: before, matching: { event in
+                    guard event["event"] as? String == "native.selectionChanged", let ids = event["rowIDs"] as? [String],
+                          let tables = event["tables"] as? [[String: Any]] else { return false }
+                    return tables.contains { table in
+                        (table["selectedRows"] as? [Int] ?? []).contains { ids.indices.contains($0) && ids[$0] == token }
+                    }
+                }, file: file, line: line)
+            }
+            // AppKit selection and the SwiftUI binding can already agree before
+            // a repeated click; neither owes us a redundant change event.
+            if !wasObserved {
+                try requireSelectionEvent("Selection stage 5: SwiftUI must receive the target installation ID", nonce: nonce, after: before,
+                                          matching: { $0["event"] as? String == "binding.set" && $0["new"] as? String == token }, file: file, line: line)
+                try requireSelectionEvent("Selection stage 5: SwiftUI must retain the observed target ID", nonce: nonce, after: before,
+                                          matching: { $0["event"] as? String == "selection.observed" && $0["value"] as? String == token }, file: file, line: line)
+            }
+        }
+        // Native selected state and independently rendered Details are still required.
+        let details = try selectedDetails(name, in: app, file: file, line: line)
+        completed = true
+        return details
     }
 
     private func inventoryViewport(_ table: XCUIElement, in app: XCUIApplication) -> XCUIElement {
@@ -267,7 +430,7 @@ final class MacventoryUITests: XCTestCase {
         let title = sheet.staticTexts["management.title"]
         let identity = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@ OR value BEGINSWITH %@", name, name, name + " "), object: title)
         _ = try XCTUnwrap(XCTWaiter.wait(for: [identity], timeout: 5) == .completed ? sheet : nil,
-                          "The Management title must identify the selected fixture", file: file, line: line)
+                          "Selection stage 7: Management must identify the same selected fixture", file: file, line: line)
         XCTAssertTrue(sheet.buttons["management.confirm"].exists, file: file, line: line)
         XCTAssertFalse(sheet.buttons["management.confirm"].isEnabled, "Opening review must not authorize execution", file: file, line: line)
         XCTAssertFalse(sheet.checkBoxes["management.acknowledge"].isEnabled, file: file, line: line)
@@ -281,10 +444,16 @@ final class MacventoryUITests: XCTestCase {
         let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
         let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
         let button = app.buttons["inventory.uninstall"]
+        // Failure capture must tolerate the missing Details that caused the
+        // original assertion; querying its frame would create a second failure.
+        func frame(_ element: XCUIElement) -> String { element.exists ? "\(element.frame)" : "absent" }
+        let detailsState = details.exists ?
+            "details=\(details.frame) metadata=\(frame(details.scrollViews["inventory.details.scroll"])) " +
+            "footer=\(frame(actions)) footerValue=\(actions.exists ? String(describing: actions.value) : "absent")" : "details=absent"
+        let buttonState = button.exists ?
+            "button=\(button.frame) enabled=\(button.isEnabled) hittable=\(button.isHittable)" : "button=absent"
         let evidence = XCTAttachment(string: "phase=\(phase) state=\(app.state.rawValue) " +
-            "window=\(app.windows.firstMatch.frame) details=\(details.frame) metadata=\(details.scrollViews["inventory.details.scroll"].frame) " +
-            "footer=\(actions.frame) footerValue=\(String(describing: actions.value)) " +
-            "button=\(button.frame) enabled=\(button.isEnabled) hittable=\(button.isHittable)\n" + app.debugDescription)
+            "window=\(app.windows.firstMatch.frame) \(detailsState) \(buttonState)\n" + app.debugDescription)
         evidence.name = phase + " — Details geometry and accessibility"
         evidence.lifetime = .keepAlways
         add(evidence)
@@ -959,5 +1128,24 @@ final class MacventoryHeaderPointerDiagnostics: XCTestCase {
             XCTAssertTrue(app.buttons["Copy Identifier"].exists)
             XCTAssertTrue(app.staticTexts["org.example.app"].exists, "Sorting must preserve the selected application's identity")
         }
+    }
+}
+
+/// Three planned startup comparisons, each selected alone on a fresh hosted VM.
+/// They never retry a failed launch or substitute for the 17 primary cases.
+@MainActor
+final class MacventoryStartupDiagnostics: XCTestCase {
+    func testAOriginalActivationAndSelectionDiagnostics() throws { try startup() }
+    func testBLaunchWithoutExtraActivation() throws { try startup(activate: false) }
+    func testCOriginalActivationWithoutSelectionDiagnostics() throws { try startup(selection: false) }
+
+    private func startup(activate: Bool = true, selection: Bool = true) throws {
+        let app = try launchSyntheticApp(arguments: ["--ui-testing", "--qa-execution-levels"], testCase: self,
+                                         activateAfterLaunch: activate, selectionDiagnostics: selection,
+                                         startupDiagnostics: true)
+        // A genuine inventory window and its native table are required. No openWindow,
+        // New Window menu command, fabricated NSWindow, selection action or recovery.
+        let table = app.descendants(matching: .any).matching(identifier: "inventory.table").firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5), "Startup stage: the real inventory table must attach")
     }
 }

@@ -7,7 +7,56 @@ private struct InventorySettingsPresentation: Identifiable {
     let tab: Int
 }
 
+/// An ordinary AppKit search editor keeps search presentation out of the
+/// SwiftUI searchable responder transition while the native Table tracks a click.
+struct InventorySearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.identifier = NSUserInterfaceItemIdentifier("inventory.search")
+        field.setAccessibilityIdentifier("inventory.search")
+        field.setAccessibilityLabel("Search software")
+        field.placeholderString = "Search software, identifiers, paths…"
+        field.sendsWholeSearchString = false
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.searchChanged(_:))
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        // Avoid resetting the editor/caret during updates from its own action.
+        if field.stringValue != text { field.stringValue = text }
+        field.isEnabled = context.environment.isEnabled
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+        @objc func searchChanged(_ sender: NSSearchField) {
+            if text.wrappedValue != sender.stringValue { text.wrappedValue = sender.stringValue }
+        }
+    }
+
+    /// Invoked only by the person's Find Software command, never by row input.
+    static func focus(in window: NSWindow?) {
+        func find(_ view: NSView) -> NSSearchField? {
+            if let field = view as? NSSearchField, field.identifier?.rawValue == "inventory.search" { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let root = window?.contentView?.superview, let field = find(root), field.isEnabled else { return }
+        window?.makeFirstResponder(field)
+        field.selectText(nil)
+    }
+}
+
 struct InventoryView: View {
+    init() { QAStartupDiagnostics.record("inventoryView.init") }
     @EnvironmentObject private var model: AppModel
     @State private var navigation: Set<String> = ["view:all"]
     @State private var search = ""
@@ -49,6 +98,7 @@ struct InventoryView: View {
     // Separate opaque view types keep each SwiftUI builder small enough to type-check.
     // State stays in this view so navigation, selection and sheet lifetimes are unchanged.
     var body: some View {
+        let _ = QAStartupDiagnostics.record("inventoryView.body")
         NavigationSplitView {
             sidebar
         } detail: {
@@ -58,7 +108,6 @@ struct InventoryView: View {
             } else {
                 inventoryContent
                     .inventoryNavigationTitle()
-                    .searchable(text: $search, prompt: "Search software, identifiers, paths…")
                     .toolbar { inventoryToolbar }
                     .sheet(item: $managementPresentation, onDismiss: { model.closeManagement() }) { presentation in
                         ManagementView(presentation: presentation, onReviewLeftovers: { managementPresentation = nil; model.closeManagement(); navigation = ["leftovers"] }).id(presentation.id)
@@ -206,6 +255,10 @@ struct InventoryView: View {
             if model.scanning { Button("Cancel") { model.cancel() }.accessibilityIdentifier("inventory.cancel").controlHelp("Cancel Scan") }
             else { Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.accessibilityIdentifier("inventory.refresh").controlHelp("Refresh Inventory").accessibilityLabel("Refresh Inventory") }
         }
+        ToolbarItem {
+            InventorySearchField(text: $search).frame(width: 280)
+                .help("Filter the current inventory using a name, identifier or path")
+        }
     }
 
     private func reviewUninstall(_ item: SoftwareItem) {
@@ -221,7 +274,10 @@ struct InventoryView: View {
             if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort) }
             else { legacyTable }
         }
-        .onAppear { model.noteWindowAppearance() }
+        .onAppear {
+            QAStartupDiagnostics.record("inventoryView.appeared")
+            model.noteWindowAppearance()
+        }
         .background {
             if selectionDiagnostics { QASelectionObserver(selected: selected, rows: rows.map(\.id), search: search).frame(width: 0, height: 0) }
         }
@@ -257,7 +313,7 @@ struct InventoryView: View {
                 HStack(spacing: 9) {
                     AppIcon(path: item.path, demoSymbol: item.attributes["Demo symbol"])
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name).lineLimit(1).help(item.name)
+                        Text(item.name).lineLimit(1).help(item.name).accessibilityIdentifier("inventory.name." + item.id)
                         if item.stale { Text("Cached / Stale").font(.caption2).foregroundStyle(.secondary) }
                     }
                 }.padding(.vertical, 3).pointingControl()

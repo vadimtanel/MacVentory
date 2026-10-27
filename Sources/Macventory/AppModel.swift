@@ -60,6 +60,9 @@ final class AppModel: ObservableObject {
     init() {
         runMode = InventoryRunMode(arguments: ProcessInfo.processInfo.arguments, qaBundle: Bundle.main.object(forInfoDictionaryKey: "MacventoryQABundle") as? Bool == true)
         fixtureMode = runMode.isolated
+        QAStartupDiagnostics.start(isolated: fixtureMode)
+        QAStartupDiagnostics.record("appModel.init.begin")
+        defer { QAStartupDiagnostics.record("appModel.init.end") }
         QASelectionDiagnostics.start(isolated: runMode.isolated)
         qaProtected = !runMode.allowsLiveRemoval
         let managementExecutor = ManagementExecutorFactory.make(mode: runMode, failure: ProcessInfo.processInfo.arguments.contains("--qa-management-failure") ? .forceQuit : nil, partialCleanup: ProcessInfo.processInfo.arguments.contains("--qa-partial-cleanup"), missingFirst: ProcessInfo.processInfo.arguments.contains("--qa-missing-cleanup"))
@@ -70,9 +73,11 @@ final class AppModel: ObservableObject {
         configuration = fixtureMode ? ScanConfiguration() : (UserDefaults.standard.data(forKey: "configuration").flatMap { try? JSONDecoder().decode(ScanConfiguration.self, from: $0) }) ?? ScanConfiguration()
         cache = SnapshotStore(directory: fixtureMode ? FileManager.default.temporaryDirectory.appendingPathComponent("Macventory-Isolated-" + UUID().uuidString) : nil)
         identityStore = ApplicationIdentityStore(directory: fixtureMode ? Self.fixtureRoot.appendingPathComponent("IdentityStore") : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Macventory"))
+        QAStartupDiagnostics.record("appModel.services.ready")
         if fixtureMode && (Bundle.main.object(forInfoDictionaryKey: "MacventoryHealthQA") as? Bool == true || (ProcessInfo.processInfo.arguments.contains("--qa-health-scenarios") || ProcessInfo.processInfo.arguments.contains("--qa-execution-levels"))) { configuration.showSystem = true }
         if fixtureMode {
             items = demoMode ? DemoInventory.items() : Self.fixtures(); progress = demoMode ? "Synthetic demonstration · local software is not scanned" : "Fixture inventory"
+            QAStartupDiagnostics.record("appModel.fixtures.ready", ["count": items.count])
             if ProcessInfo.processInfo.arguments.contains("--ui-test-error") { error = "Simulated scanner failure — synthetic QA fixture. Existing inventory is retained." }
         }
         else {

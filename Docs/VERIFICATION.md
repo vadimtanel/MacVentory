@@ -1,4 +1,38 @@
-# Macventory 1.0.0 verification — 24 October 2026
+# Verification — Macventory v1.1.0
+
+## Stabilization status — 27 October 2026
+
+**Selection/Details remains blocked; release readiness is not established.** PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) preserves the documentation and stabilization history. Startup passed its single focused hosted case at `1fe3c150e2fba555c42d352d7986ee214dceae17`, [run 40405018837](https://github.com/vadimtanel/MacVentory/actions/runs/40405018837). The exact-identifier locator and validated row-coordinate corrections are test infrastructure changes, not demonstrated production selection repairs.
+
+At `b4c1902dc3ce5592f2b5bf80c5e811f2d015bb57`, [isolated run 40416962436](https://github.com/vadimtanel/MacVentory/actions/runs/40416962436) failed both focused cases at native selection. One earlier Example App interaction reached the correct binding/Details and Direct Uninstall review/cancel; the remaining execution-level/Management GUI contract was not completed. Native evidence shows provisional `[0]` during search end-editing, then `[]` on the same table without binding delivery. The clearing writer and production-versus-QA/XCTest/runtime classification remain unproven. A macOS 27 synthetic click succeeded under LLDB, with different search-responder behavior and no clearing stack; it does not establish macOS 26 production correctness.
+
+The existing PR [run 40424237147](https://github.com/vadimtanel/MacVentory/actions/runs/40424237147) is reused rather than duplicated. Its native prerequisite passed 222 tests plus three intentional live skips in each SwiftPM/Xcode run, all 16 CI regressions, app/test compilation and package/signature/ZIP/DMG/checksum/source-manifest validation. Its primary full suite executed all 17 cases: **15 passed, two failed, zero skipped**. Both failures are native selection; four assertion records include the two secondary absent-Details capture errors. The run checks GitHub's synthetic merge revision, not the PR head revision. Native success and the 15 other GUI passes do not establish release readiness.
+
+The current preparation adds only bounded QA notification stacks, failure capture that tolerates absent Details, and focused PR execution at the exact candidate SHA. It preserves all 17 primary test bodies, native gestures, assertions and timing bounds. Local application build, 225 registered synthetic tests/24 suites (three live skips), 16 CI regressions and the separate-process trace safety contract pass. UI source parsing passes; this Mac has Command Line Tools, so it cannot establish XCUITest compilation/execution. This preparation is not a production repair or a passing hosted candidate.
+
+Candidate `386f456863c55c444e827e6e86eb4fc25914a28c`, [run 40427009388](https://github.com/vadimtanel/MacVentory/actions/runs/40427009388): exact-head checkout and `isolated` scenario verified; **zero passed, two failed, zero skipped**, with two original assertion failures and no secondary Details-capture failure. Native SwiftPM/Xcode runs each pass 222 tests with three live skips; all 16 CI regressions, app/test-target compilation and packaging/integrity checks pass. Both cases select Example App correctly before Interactive Vendor Example rolls back. The new notification stack locates empty selection inside native mouse tracking, without identifying the clearing instruction. The next scoped observation records current event versus actual cursor state; it is not a production repair or release validation.
+
+## Historical documentation candidate — 26 October 2026
+
+Source metadata is **1.1.0 / build 108**, with configured macOS **13.0** minimum. Documentation preparation starts from clean `main` at `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. Version values are not incremented. v1.1.0 is upcoming; the owner will create the tag and publish the release separately.
+
+| Evidence category | Established evidence and limits |
+|---|---|
+| Implemented | Merged source-aware uninstall levels/adapters, installation health, missing-app/historical records, application management, separate Leftover Data, safeguards, diagnostics and packaging. Implementation does not prove real effects. |
+| Recorded local synthetic tests | The [trace-handoff report](SELECTION_TRACE_HANDOFF_VALIDATION.md) records 225 registered tests across 24 suites: 222 passed, 0 failed, 3 intentional live-test skips. Earlier 148/207/221/222 totals belong to their named snapshots; they are not new runs for this documentation commit. |
+| Recorded read-only live tests | Native/Homebrew/receipt observations and earlier opt-in read-only integration passes exist in the reports. They do not test removal. |
+| Hosted starting-commit evidence | [Run 40309598774](https://github.com/vadimtanel/MacVentory/actions/runs/40309598774), attempt 1, for `a5a66ef`: **overall failure**. Native passed SwiftPM, Xcode app/test compilation, hosted units, packaging and artifact validation. UI failed actual-count/order verification and final reporting. Primary GUI/header step summaries alone do not establish a full 16-case pass; raw evidence needs inspection. |
+| Documentation commit and stabilization | Commit `3c99886e9fe2f625279e9fe75aab83dc9274e0c1` is preserved on the existing local/remote stabilization branch. Its [hosted run 40316125739](https://github.com/vadimtanel/MacVentory/actions/runs/40316125739) failed the same execution-level case (15/16 passed). The original documentation review remains a dated record. The proposed local test/CI patch has no hosted validation; see [stabilization findings](STABILIZATION_SELECTION_REVIEW.md). |
+| Real effects | Actual provider removal, native Finder Trash/restoration, real Force Quit, vendor/Steam completion and real signed-helper authorization/lifecycle remain unverified. Fake effects are not destructive safety evidence. |
+| Distribution/runtime | arm64 is primary. Recorded local runtime is M4 Pro/macOS 27.0.1; macOS 13 is configured, not runtime-tested. Intel/universal, quarantined clean-machine Gatekeeper and full spoken VoiceOver remain unverified. Default packaging is ad hoc, not Developer ID/notarized. |
+
+**DOCUMENTATION READY** requires zero publication findings and reviewed Markdown/links/diff. **RELEASE READY is not established.** Require complete hosted CI on the exact final commit (all 16 original primary GUI cases plus the proposed selection regression, sequence checks and diagnostics), verified matching assets and review/resolution of applicable remaining gates before tagging. See [CI](CI.md), [release process](RELEASING.md) and the [disposable-environment verification plan](UNINSTALL_FOCUSED_VALIDATION.md).
+
+This documentation-only pass performs no app build/package generation, application launch, destructive test, manager mutation, process termination, cache clearing or privileged-helper activation. It does not validate earlier local packages as v1.1.0 artifacts.
+
+## Historical verification log — v1.0.0 development builds
+
+All sections below retain their original build identifiers, counts and pass-specific claims. Headings such as “current”, “latest” and “blocked” refer to the named historical pass, not the v1.1.0 documentation candidate. Later source/audit reports and the current summary above take precedence for current behavior; these records are not rewritten as newer tests. Earlier statements excluding any helper/elevation predate the separate MacPorts implementation.
 
 ## Build107 — current verification
 

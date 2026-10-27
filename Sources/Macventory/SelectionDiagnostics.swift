@@ -10,6 +10,9 @@ import Darwin
 enum QATraceHandoff {
     static let traceName = "native-selection.jsonl"
     static let startupName = "startup.jsonl"
+    static let lifecycleName = "startup-lifecycle.jsonl"
+    static let selectionEnvironmentKey = "MACVENTORY_QA_SELECTION_TRACE_ID"
+    static let startupEnvironmentKey = "MACVENTORY_QA_STARTUP_TRACE_ID"
     static let traceLimit = 1_048_576
     static let startupLimit = 16_384
     static func failure(_ operation: String, code: Int32 = errno) -> NSError {
@@ -47,7 +50,7 @@ enum QATraceHandoff {
         }
         deinit { close(descriptor) }
         func createFile(_ name: String) throws -> FileHandle {
-            guard [traceName, startupName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
+            guard [traceName, startupName, lifecycleName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
             let fd = openat(descriptor, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard fd >= 0 else { throw failure("Create \(name)") }
             return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
@@ -63,7 +66,7 @@ enum QATraceHandoff {
                   current.st_mode & 0o777 == 0o700 else {
                 throw failure("Trace directory changed before cleanup", code: EACCES)
             }
-            for name in [startupName, traceName] {
+            for name in [startupName, traceName, lifecycleName] {
                 let fd = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
                 if fd < 0 && errno == ENOENT { continue }
                 guard fd >= 0 else { throw failure("Open trace file before cleanup") }
@@ -79,7 +82,7 @@ enum QATraceHandoff {
             guard rmdir(url.path) == 0 else { throw failure("Remove private trace directory") }
         }
         func read(_ name: String, limit: Int) throws -> Data {
-            guard [traceName, startupName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
+            guard [traceName, startupName, lifecycleName].contains(name) else { throw failure("Invalid trace filename", code: EINVAL) }
             let fd = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
             guard fd >= 0 else { throw failure("Read \(name)") }
             let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
@@ -112,6 +115,124 @@ enum QATraceHandoff {
     }
 }
 
+/// Independent of the table/selection probe: available even when no scene attaches.
+/// Only explicitly requested synthetic QA launches write this bounded private trace.
+/// Never creates/activates/orders a window, changes preferences, or installs an event monitor.
+@MainActor
+enum QAStartupDiagnostics {
+    private static var session: Session?
+    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments,
+                      environment: [String: String] = ProcessInfo.processInfo.environment) {
+        guard session == nil, isolated, arguments.contains("--ui-testing"),
+              arguments.contains("--qa-startup-diagnostics"),
+              let nonce = environment[QATraceHandoff.startupEnvironmentKey] else { return }
+        do { session = try Session(nonce: nonce) }
+        catch { NSLog("QA startup observation could not initialize: %@", error.localizedDescription) }
+    }
+    static func record(_ stage: String, _ fields: [String: Any] = [:]) { session?.record(stage, fields) }
+
+    @MainActor private final class Session {
+        private let directory: QATraceHandoff.Directory
+        private let file: FileHandle
+        private var observers: [NSObjectProtocol] = []
+        private var bytes = 0
+        private var sequence = 0
+        private var updateSignature: String?
+
+        init(nonce: String) throws {
+            directory = try QATraceHandoff.Directory.create(nonce)
+            file = try directory.createFile(QATraceHandoff.lifecycleName)
+            record("startup.observer.ready", ["selectionDiagnostics": ProcessInfo.processInfo.arguments.contains("--qa-selection-diagnostics"),
+                "isolated": true, "uiTestingArgument": true,
+                "bundleIdentifier": Bundle.main.bundleIdentifier ?? "nil", "pid": ProcessInfo.processInfo.processIdentifier,
+                "paths": QATraceHandoff.processPaths, "restorationPreferences": Self.restorationPreferences])
+            let defaultLaunchKey = NSApplication.launchIsDefaultUserInfoKey
+            for name in [NSApplication.willFinishLaunchingNotification, NSApplication.didFinishLaunchingNotification,
+                         NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                         NSApplication.didHideNotification, NSApplication.didUnhideNotification,
+                         NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+                         NSWindow.didBecomeMainNotification, NSWindow.didMiniaturizeNotification,
+                         NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    let isDefaultLaunch = (note.userInfo?[defaultLaunchKey] as? NSNumber)?.boolValue
+                    let window = note.object as? NSWindow
+                    MainActor.assumeIsolated {
+                        var fields: [String: Any] = ["notification": name.rawValue]
+                        if let isDefaultLaunch { fields["isDefaultLaunch"] = isDefaultLaunch }
+                        if name == NSApplication.didFinishLaunchingNotification {
+                            fields["restorationPreferences"] = Self.restorationPreferences
+                        }
+                        if let window { fields["notifyingWindow"] = Self.windowState(window) }
+                        self?.record("native.notification", fields)
+                    }
+                })
+            }
+            // Event-driven snapshots, deduplicated by actual native state. No timer,
+            // sleep, updateWindows call or synthetic event advances the lifecycle.
+            observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didUpdateNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let state = Self.nativeState
+                    let signature = (try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) }
+                    guard signature != self.updateSignature else { return }
+                    self.updateSignature = signature
+                    self.record("native.windowsUpdated", state)
+                }
+            })
+            observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.record("application.willTerminate")
+                    do { try self.directory.remove() }
+                    catch { NSLog("QA startup trace cleanup failed: %@", error.localizedDescription) }
+                }
+            })
+        }
+        private static var restorationPreferences: [String: Any] {
+            let defaults = UserDefaults.standard
+            let bundleID = Bundle.main.bundleIdentifier ?? ""
+            let domain = defaults.persistentDomain(forName: bundleID) ?? [:]
+            var result: [String: Any] = ["persistentKeys": Array(domain.keys.sorted().prefix(64)),
+                                         "hasConfiguration": domain["configuration"] != nil]
+            for key in ["NSQuitAlwaysKeepsWindows", "ApplePersistenceIgnoreState"] {
+                result[key] = defaults.object(forKey: key).map { String(describing: $0) } ?? "unset"
+            }
+            // Presence only: do not copy file paths from AppKit's launch defaults.
+            result["NSOpenPresent"] = defaults.object(forKey: "NSOpen") != nil
+            let saved = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Saved Application State/" + bundleID + ".savedState")
+            result["savedStateDirectoryExists"] = FileManager.default.fileExists(atPath: saved.path)
+            return result
+        }
+        private static func windowState(_ window: NSWindow) -> [String: Any] {
+            ["identity": String(describing: ObjectIdentifier(window)), "class": String(describing: type(of: window)),
+             "number": window.windowNumber, "identifier": window.identifier?.rawValue ?? "nil",
+             "title": window.title, "frame": NSStringFromRect(window.frame), "visible": window.isVisible,
+             "key": window.isKeyWindow, "main": window.isMainWindow, "miniaturized": window.isMiniaturized,
+             "restorable": window.isRestorable, "occlusionVisible": window.occlusionState.contains(.visible),
+             "contentView": window.contentView.map { String(describing: type(of: $0)) } ?? "nil"]
+        }
+        private static var nativeState: [String: Any] {
+            // NSApp is read without NSApplication.shared: observation must not
+            // instantiate NSApplication earlier than SwiftUI normally would.
+            guard let app = NSApp else { return ["nsApplicationAvailable": false] }
+            return ["nsApplicationAvailable": true, "active": app.isActive, "hidden": app.isHidden,
+                    "activationPolicy": app.activationPolicy().rawValue, "running": app.isRunning,
+                    "windows": app.windows.map(windowState), "orderedWindows": app.orderedWindows.map(\.windowNumber),
+                    "keyWindow": app.keyWindow?.windowNumber ?? -1, "mainWindow": app.mainWindow?.windowNumber ?? -1]
+        }
+        func record(_ stage: String, _ fields: [String: Any] = [:]) {
+            guard bytes < 262_144 else { return }
+            sequence += 1
+            var value = Self.nativeState.merging(fields) { _, new in new }
+            value["stage"] = stage; value["sequence"] = sequence; value["uptime"] = ProcessInfo.processInfo.systemUptime
+            guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+                  bytes + data.count + 1 <= 262_144 else { return }
+            do { try file.write(contentsOf: data + Data([10])); bytes += data.count + 1 }
+            catch { NSLog("QA startup trace append failed: %@", error.localizedDescription) }
+        }
+    }
+}
+
 /// Temporary, observational diagnostics. No event replacement, responder changes or selection setters.
 @MainActor
 enum QASelectionDiagnostics {
@@ -129,15 +250,18 @@ enum QASelectionDiagnostics {
     }
     private static var attempted = false
     private static var cleanupObserver: NSObjectProtocol?
-    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
+    static func start(isolated: Bool, arguments: [String] = ProcessInfo.processInfo.arguments,
+                      environment: [String: String] = ProcessInfo.processInfo.environment) {
         guard !attempted, enabled(isolated: isolated, arguments: arguments) else { return }
         attempted = true
         var startup: FileHandle?
         do {
-            guard let index = arguments.firstIndex(of: "--qa-selection-trace-id"), arguments.indices.contains(index + 1) else {
-                throw QATraceHandoff.failure("Missing --qa-selection-trace-id", code: EINVAL)
+            // Cold QA presentation depends on the original argument arrangement.
+            // Transport this opaque metadata independently of launch-argument order.
+            guard let nonce = environment[QATraceHandoff.selectionEnvironmentKey] else {
+                throw QATraceHandoff.failure("Missing " + QATraceHandoff.selectionEnvironmentKey, code: EINVAL)
             }
-            let directory = try QATraceHandoff.Directory.create(arguments[index + 1])
+            let directory = try QATraceHandoff.Directory.create(nonce)
             cleanupObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
                                                                      object: nil, queue: .main) { _ in
                 do { try directory.remove() }
@@ -193,12 +317,18 @@ enum QASelectionDiagnostics {
                 }
                 return event // Observe only: never consume, replace, redirect or synthesize input.
             }
-            for name in [NSTableView.selectionDidChangeNotification, NSOutlineView.selectionDidChangeNotification] {
+            // Capture the native changing notification as well as the committed
+            // change. A provisional selection may roll back without didChange.
+            for (name, event) in [(NSTableView.selectionIsChangingNotification, "native.selectionChanging"),
+                                  (NSOutlineView.selectionIsChangingNotification, "native.selectionChanging"),
+                                  (NSTableView.selectionDidChangeNotification, "native.selectionChanged"),
+                                  (NSOutlineView.selectionDidChangeNotification, "native.selectionChanged")] {
                 observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                     guard let table = note.object as? NSTableView else { return }
                     MainActor.assumeIsolated {
                         guard let self, let window = self.window, table.window === window, table.tableColumns.contains(where: { $0.title == "Name" }) else { return }
-                        self.record("native.selectionChanged", ["notification": name.rawValue, "notifyingTable": Self.identity(table)])
+                        self.record(event, ["notification": name.rawValue, "notifyingTable": Self.identity(table),
+                            "callerStack": Array(Thread.callStackSymbols.prefix(40))])
                     }
                 })
             }
@@ -212,7 +342,13 @@ enum QASelectionDiagnostics {
                     MainActor.assumeIsolated {
                         guard let self, let window = self.window else { return }
                         let relevant = observedWindow.map { $0 === window } ?? control.map { $0.window === window } ?? (application != nil)
-                        if relevant { self.record("responder.notification", ["notification": name.rawValue]) }
+                        if relevant {
+                            var fields: [String: Any] = ["notification": name.rawValue]
+                            if name == NSControl.textDidEndEditingNotification {
+                                fields["callerStack"] = Array(Thread.callStackSymbols.prefix(40))
+                            }
+                            self.record("responder.notification", fields)
+                        }
                     }
                 })
             }
@@ -231,12 +367,35 @@ enum QASelectionDiagnostics {
             record["event"] = event; record["sequence"] = sequence; record["uptime"] = ProcessInfo.processInfo.systemUptime
             record["firstResponder"] = Self.identity(window?.firstResponder)
             if let editor = window?.firstResponder as? NSTextView { record["fieldEditor"] = editor.isFieldEditor; record["editorDelegateClass"] = editor.delegate.map { String(describing: type(of: $0)) } ?? "nil" }
+            // AppKit tracking can consume events without another sendEvent/local
+            // monitor callback. Observe its current input and the actual cursor;
+            // never move it, finish editing, or change native selection here.
+            let pointer = window.map { $0.convertPoint(fromScreen: NSEvent.mouseLocation) }
+            record["pointerOnScreen"] = NSStringFromPoint(NSEvent.mouseLocation)
+            record["pressedMouseButtons"] = NSEvent.pressedMouseButtons
+            var trackingPoint: NSPoint?
+            if let current = NSApp?.currentEvent {
+                record["currentEventType"] = current.type.rawValue
+                record["currentEventTimestamp"] = current.timestamp
+                record["currentEventModifiers"] = current.modifierFlags.rawValue
+                if [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .mouseMoved].contains(current.type),
+                   current.window === window {
+                    trackingPoint = current.locationInWindow
+                    record["currentEventPointInWindow"] = NSStringFromPoint(current.locationInWindow)
+                    if [.leftMouseDown, .leftMouseUp].contains(current.type) {
+                        record["currentEventClickCount"] = current.clickCount
+                        record["currentEventNumber"] = current.eventNumber
+                    }
+                }
+            }
             if let root = window?.contentView {
                 let tables = inventoryTables(root)
                 record["tables"] = tables.map { table -> [String: Any] in
                     var result: [String: Any] = ["identity": Self.identity(table), "selectedRows": Array(table.selectedRowIndexes),
                         "clickedRow": table.clickedRow, "rowCount": table.numberOfRows, "frame": NSStringFromRect(table.frame)]
                     if let point { result["rowAtPoint"] = table.row(at: table.convert(point, from: nil)) }
+                    if let pointer { result["rowAtPointer"] = table.row(at: table.convert(pointer, from: nil)) }
+                    if let trackingPoint { result["rowAtCurrentEvent"] = table.row(at: table.convert(trackingPoint, from: nil)) }
                     return result
                 }
                 if let point {

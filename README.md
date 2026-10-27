@@ -1,28 +1,26 @@
 <p align="center"><img src="Design/Branding/brand-lockup-reference.png" width="260" alt="Macventory official logo"></p>
 
-# Macventory 1.0.0
+# Macventory 1.1.0
 
 ### Know what's on your Mac.
 
 A free, native macOS application for understanding installed software: where it came from, which version is present, how much space its payload uses, and what is known about installation and usage dates.
 
-## Download Macventory v1.0.0
+## Macventory v1.1.0 — Uninstall & Installation Health
 
-Macventory v1.0.0 is the first officially published release. See the [official release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0).
+**v1.1.0 is upcoming; its GitHub Release and downloads have not been published.** This repository prepares version 1.1.0 / build 108. Use the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) for available downloads; [v1.0.0](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0) is the first published release.
 
-- [**DMG — Recommended**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.dmg)
-- [**ZIP — Alternative**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.zip)
-- [**SHA-256 Checksums**](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.sha256)
+The planned v1.1.0 release contains an Apple Silicon DMG (recommended), ZIP alternative, SHA-256 checksum file and source archive. See [installation and expected filenames](Docs/INSTALLATION.md) and the [v1.1.0 changelog](CHANGELOG.md).
 
 [All Releases](https://github.com/vadimtanel/MacVentory/releases) · [Installation instructions](#installation)
 
 [Official repository](https://github.com/vadimtanel/MacVentory) · [Created by Vadim Tanel](https://www.linkedin.com/in/vadim-tanel/) · [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Apple Silicon · macOS 13+ deployment target · Latest Release: v1.0.0**
+**Apple Silicon · macOS 13.0 configured minimum · Upcoming: v1.1.0 / build 108**
 
 ![Actual Macventory app in Light Mode with fictional demonstration records](Docs/Screenshots/macventory-inventory-light.png)
 
-The image is an actual native-app capture using isolated demo data. Every software name and observation shown is fictional; no personal inventory is used in public screenshots.
+The image is an actual native-app capture using isolated demo data. Every software name and observation shown is fictional; no personal inventory is used in public screenshots. The retained screenshots show earlier UI/builds and do not establish v1.1.0 runtime or release validation.
 
 ## Overview
 
@@ -36,11 +34,12 @@ Two discoveries of the same physical app can become one row. Separate copies and
 - Ten installation-source categories, plus Unknown/Ambiguous.
 - Versions, paths, logical payload sizes, installation events and last-opened observations where reliable.
 - Search names, identifiers and paths; combine source, kind, confidence, size and date filters.
-- Click any of six headers to sort. New fields start ascending; repeated clicks reverse. Missing values stay last, numeric versions compare naturally, and selection remains stable.
+- Sort by Name, Version, Source, Status, Size, Installed or Last Opened. New fields start ascending; repeated clicks reverse. Missing values stay last, numeric versions compare naturally, and selection remains stable.
 - Optional column visibility/customization on macOS 14+, with a fixed-column macOS 13 fallback.
-- Recently Installed, Possibly Unused, Large Applications and Unknown Metadata smart views.
+- Recently Installed, Possibly Unused, Large Applications, Unknown Metadata and **Attention Required** smart views.
 - Local snapshot cache, progressive scans, cancellation, sanitized diagnostics and settings drafts.
-- Single-application uninstall previews with plan-bound confirmation, fresh ownership checks and conservative source-specific eligibility.
+- Unified single-installation removal review with **Direct Uninstall**, **Interactive Uninstall**, **Guided Only** and independent **Protected / Blocked** safeguards.
+- Installation health separates manager registration, expected application/payload presence, historical receipts and incomplete observations; discovery never repairs or removes software.
 - Application management: verified-process Quit/Force Quit, source-aware Clear App Data, and a dedicated **Leftover Data** view for residual data after removal.
 
 ## Screenshots
@@ -91,7 +90,7 @@ brew tap vadimtanel/macventory
 brew install --cask vadimtanel/macventory/macventory
 ```
 
-The fully qualified name avoids Cask-name conflicts and grants trust only to this Cask under [Homebrew's Tap Trust guidance](https://docs.brew.sh/Tap-Trust). Adding the Tap alone does not grant whole-Tap trust.
+Use the fully qualified name to identify the project's Cask. Homebrew manages Tap trust and any prompts under its [Tap Trust guidance](https://docs.brew.sh/Tap-Trust).
 
 To update:
 
@@ -100,14 +99,14 @@ brew update
 brew upgrade --cask vadimtanel/macventory/macventory
 ```
 
-The Tap checks for new stable releases approximately every six hours and updates after automated artifact and Homebrew checks pass. Synchronization may be delayed; users receive available updates through the commands above. See the [latest stable release](https://github.com/vadimtanel/MacVentory/releases/latest) and [Tap documentation](https://github.com/vadimtanel/homebrew-macventory) for details.
+Homebrew installs the version currently offered by the separate Tap. v1.1.0 becomes available there only after its stable GitHub Release is published and the Tap automation detects and validates it; synchronization may be delayed. See the [latest stable release](https://github.com/vadimtanel/MacVentory/releases/latest) and [Tap documentation](https://github.com/vadimtanel/homebrew-macventory) for availability.
 
 Homebrew is optional: direct [DMG and ZIP downloads](https://github.com/vadimtanel/MacVentory/releases) and the manual instructions below remain available. The application is currently ad-hoc signed and **not Apple-notarized**. Homebrew installation does not bypass Gatekeeper; review the [first-launch guidance](#first-launch-and-gatekeeper).
 
 ### Recommended DMG installation
 
-1. [Download the v1.0.0 DMG](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.dmg).
-2. Open `Macventory-1.0.0-arm64.dmg`.
+1. Open the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) and download its arm64 DMG and checksum file. v1.1.0 is not yet available.
+2. Verify the download, then open the DMG. The planned v1.1.0 filename is `Macventory-1.1.0-arm64.dmg`.
 3. Drag Macventory.app onto the Applications shortcut.
 4. Eject the disk image.
 5. Launch Macventory from Applications or Spotlight.
@@ -118,8 +117,8 @@ The disk contains the complete app and a visual installation guide. No command-l
 
 ### Alternative ZIP installation
 
-1. [Download the v1.0.0 ZIP](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.zip).
-2. Extract `Macventory-1.0.0-arm64.zip` to obtain Macventory.app.
+1. Open the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) and download its arm64 ZIP and checksum file.
+2. Verify and extract the ZIP to obtain Macventory.app. The planned v1.1.0 filename is `Macventory-1.1.0-arm64.zip`; it is not yet available.
 3. Move Macventory.app into Applications.
 4. Launch the application.
 
@@ -127,13 +126,15 @@ End-user Macs do not need SwiftPM, Xcode or development files.
 
 ### Integrity verification
 
-Download the [SHA-256 checksum file](https://github.com/vadimtanel/MacVentory/releases/download/v1.0.0/Macventory-1.0.0-arm64.sha256) from the same official release. If comfortable using Terminal, calculate the downloaded artifact's checksum with:
+Download the SHA-256 checksum file from the same [official release](https://github.com/vadimtanel/MacVentory/releases/latest) as the artifact. If comfortable using Terminal, calculate the downloaded artifact's checksum with:
 
 ```sh
 shasum -a 256 <filename>
 ```
 
 Replace `<filename>` with the downloaded DMG or ZIP filename and compare the result with its entry in the checksum file. Checksum verification is separate from installation. A checksum detects a mismatch but does not independently establish who published the file.
+
+To update a manual installation, quit Macventory normally, verify the new published download, then replace the existing app in Applications. Homebrew installations should use the upgrade command above. See [updating and verification](Docs/INSTALLATION.md#updating-an-existing-installation).
 
 ### First launch and Gatekeeper
 
@@ -171,10 +172,17 @@ See the [supported-source matrix](Docs/SOURCE_SUPPORT.md). Missing, empty, unsup
 
 ## Smart views
 
+- **Attention Required:** actionable installation inconsistencies and partial states, including a missing app whose manager registration remains. Inspect the evidence; a warning never authorizes removal.
 - **Recently Installed:** a verified installation event within the configured number of days. File creation is a separate fact.
 - **Possibly Unused:** a recorded opening older than the threshold, default 180 days. Missing usage never means unused; Spotlight history may be incomplete.
 - **Large Applications:** payload size at or above the selected threshold. Logical size excludes external data and does not guarantee reclaimable disk space.
 - **Unknown Metadata:** records missing important metadata such as size, install time or last-opened information.
+
+## Installation health
+
+The compact **Status** column and details distinguish **Verified Installed**, **Attention Required**, **Protected / System**, **Unknown / Unverified**, **Partially Removed** and **Receipt Only / Historical**. Details show expected paths, observed presence, manager registration and check time where available. “Verified Installed” describes observed installation state; removal eligibility is assessed separately.
+
+A missing Homebrew app can remain registered as a cask; a PKG receipt can outlive its payload. Neither is a second installed app. A CLI-only package does not require an application bundle. Separate physical copies stay separate even when names or identifiers match. Failed or incomplete scans remain unverified/stale rather than establishing absence. Refresh installation status after manual or guided work; Macventory does not automatically repair, reinstall or clean these records.
 
 ## Uninstall
 
@@ -186,7 +194,7 @@ A root-owned MacPorts installation requires a matching signed app/helper and exp
 
 There is no bulk uninstall, force, zap, automatic dependency removal, store garbage collection or automatic data sweep. Failed operations never silently switch strategies. A started external operation cannot guarantee cancellation or rollback.
 
-**Real destructive provider execution remains unverified.** Tests invoke production adapters through fake effect boundaries and disposable fixtures; live inspection is read-only. Full XCUITest and signed-helper authorization remain pending. See the [complete source matrix, QA evidence and limits](Docs/UNINSTALL_EXECUTION_LEVELS.md).
+**Real destructive provider execution remains unverified.** Tests invoke production adapters through fake effect boundaries and disposable fixtures; live inspection is read-only. Signed-helper deployment and full CI on the final documentation commit remain unverified. See the [current removal support and limits](Docs/UNINSTALL.md), [historical independent audit](Docs/UNINSTALL_FINAL_AUDIT.md) and [verification status](Docs/VERIFICATION.md).
 
 ## Application management and Leftover Data
 
@@ -248,9 +256,9 @@ bash scripts/package-release.sh
 python3 scripts/review-publication.py
 ```
 
-The build produces a native app with resources, license/NOTICE and an ad-hoc signature; no development helper is needed at runtime. Packaging prepares ZIP, DMG, source archive and SHA-256 files under artifacts/ without committing or uploading anything.
+The build produces a native app with resources, license/NOTICE and an ad-hoc signature. A narrowly scoped MacPorts helper is bundled but is not activated by installation or scanning; its privileged route needs trusted matching signing and explicit OS approval. Packaging prepares ZIP, DMG, source archive and SHA-256 files under artifacts/ without committing or uploading anything.
 
-The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 26.5 because SDK27 lacks its SwiftUI macro plug-in. Its native SwiftPM fallback is deprecated upstream. Restricted environments may need `MACVENTORY_DISABLE_SWIFTPM_SANDBOX=1`; this changes compiler subprocess sandboxing only, not macOS protections. See [release preparation](Docs/RELEASING.md) for full-Xcode commands and pending gates.
+The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 26.5 because SDK27 lacks its SwiftUI macro plug-in. Its native SwiftPM fallback is deprecated upstream. Restricted environments may need `MACVENTORY_DISABLE_SWIFTPM_SANDBOX=1`; this changes compiler subprocess sandboxing only, not macOS protections. See [release preparation](Docs/RELEASING.md) for final CI and pending release gates.
 
 ## Troubleshooting
 
@@ -262,7 +270,7 @@ The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 2
 | Too few rows | Clear search/filters, check category and Show system applications. Counts reflect visibility rules. |
 | Settings do not persist | Use Done. Cancel/window close intentionally discard the draft. |
 | Removal is unsupported | Follow the displayed manager/vendor guidance. Do not bypass ownership or protection checks. |
-| A downloaded app is blocked | Macventory v1.0.0 is ad-hoc signed and not Apple-notarized. Review the warning and the supported per-app Open Anyway procedure above, if you independently trust the download. |
+| A downloaded app is blocked | The default distribution is ad-hoc signed and not Apple-notarized. Review the warning and the supported per-app Open Anyway procedure above, if you independently trust the download. |
 
 ## Contributing
 
@@ -278,10 +286,6 @@ Redistributors must follow Apache 2.0's notice/license/change-marking requiremen
 
 ## Project status
 
-The native app, scanners, combined filtering, six-header sorting, settings transactions, demo isolation and conservative uninstall planning are implemented. Local package tests and actual GUI evidence are recorded in [Verification](Docs/VERIFICATION.md).
+Version 1.1.0 / build 108 includes the merged unified uninstall and installation-health implementation, source-aware adapters, application management, separate Leftover Data review, settings transactions and isolated demo/QA modes. [Verification](Docs/VERIFICATION.md) distinguishes recorded local fixtures, hosted CI and unverified real effects.
 
-Xcode build/XCUITest and hosted CI are not yet verified here. Full VoiceOver navigation has not been performed. Minimum-OS execution, clean-machine Gatekeeper behavior and real destructive uninstall behavior remain pending. Intel is optional, not a release requirement. Macventory v1.0.0 is officially published; these outstanding checks remain unverified in this documentation.
-
-### Unified uninstall and installation health development
-
-The feature branch adds a compact installation Status column, Attention Required Smart View, source-specific removal previews, missing Homebrew app detection and verified outcome reporting. Manager registration, application presence and historical receipts are distinct. Unsupported automation uses explicit official guidance; no repair or cleanup runs during discovery. See the [current execution-level source matrix and QA report](Docs/UNINSTALL_EXECUTION_LEVELS.md) for supported operations, simulation evidence and remaining release validation.
+The starting source commit passed hosted native build/test/package checks, but its overall run failed the GUI count/order and reporting gates; see [CI evidence](Docs/CI.md). The final documentation commit still requires its own complete hosted workflow before tagging. Full VoiceOver, minimum-OS execution, clean-machine Gatekeeper behavior, actual provider removal and signed-helper deployment remain unverified. Intel is optional. Documentation preparation does not establish **RELEASE READY**; see the [release checklist](Docs/RELEASING.md).
