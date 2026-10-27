@@ -317,12 +317,18 @@ enum QASelectionDiagnostics {
                 }
                 return event // Observe only: never consume, replace, redirect or synthesize input.
             }
-            for name in [NSTableView.selectionDidChangeNotification, NSOutlineView.selectionDidChangeNotification] {
+            // Capture the native changing notification as well as the committed
+            // change. A provisional selection may roll back without didChange.
+            for (name, event) in [(NSTableView.selectionIsChangingNotification, "native.selectionChanging"),
+                                  (NSOutlineView.selectionIsChangingNotification, "native.selectionChanging"),
+                                  (NSTableView.selectionDidChangeNotification, "native.selectionChanged"),
+                                  (NSOutlineView.selectionDidChangeNotification, "native.selectionChanged")] {
                 observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                     guard let table = note.object as? NSTableView else { return }
                     MainActor.assumeIsolated {
                         guard let self, let window = self.window, table.window === window, table.tableColumns.contains(where: { $0.title == "Name" }) else { return }
-                        self.record("native.selectionChanged", ["notification": name.rawValue, "notifyingTable": Self.identity(table)])
+                        self.record(event, ["notification": name.rawValue, "notifyingTable": Self.identity(table),
+                            "callerStack": Array(Thread.callStackSymbols.prefix(40))])
                     }
                 })
             }
@@ -336,7 +342,13 @@ enum QASelectionDiagnostics {
                     MainActor.assumeIsolated {
                         guard let self, let window = self.window else { return }
                         let relevant = observedWindow.map { $0 === window } ?? control.map { $0.window === window } ?? (application != nil)
-                        if relevant { self.record("responder.notification", ["notification": name.rawValue]) }
+                        if relevant {
+                            var fields: [String: Any] = ["notification": name.rawValue]
+                            if name == NSControl.textDidEndEditingNotification {
+                                fields["callerStack"] = Array(Thread.callStackSymbols.prefix(40))
+                            }
+                            self.record("responder.notification", fields)
+                        }
                     }
                 })
             }

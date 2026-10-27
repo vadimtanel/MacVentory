@@ -199,6 +199,11 @@ sys.exit(65 if mode == 'failed' else 143 if mode == 'interrupted' else 0)
         self.assertIn('::error::XCUITest did not validate', workflow)
         triggers = workflow.split('permissions:', 1)[0]
         self.assertIn('    branches-ignore:\n      - release/v1.1.0-stabilization', triggers)
+        # A stabilization PR push must exercise the focused contract once, at
+        # the candidate SHA rather than an unreported synthetic merge revision.
+        self.assertIn("github.head_ref == 'release/v1.1.0-stabilization' && 'isolated' || 'full'", workflow)
+        self.assertEqual(workflow.count('ref: ${{ github.event.pull_request.head.sha || github.sha }}'), 2)
+        self.assertIn('TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}', workflow)
 
     def test_startup_runs_only_original_cold_case_and_retains_its_artifacts(self):
         workflow = (ROOT/'.github/workflows/ci.yml').read_text()

@@ -1,8 +1,8 @@
 name: Build and test Macventory
 on:
   push:
-    # Stabilization validation is dispatched explicitly: focused first, full only
-    # after approval. A branch push must not start an unsolicited full GUI run.
+    # The open stabilization PR supplies focused validation on synchronization.
+    # Avoid a duplicate push run; full validation remains an explicit dispatch.
     branches-ignore:
       - release/v1.1.0-stabilization
   pull_request:
@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify runner and pinned toolchain
         run: bash scripts/verify-ci-toolchain.sh
       - name: Synthetic CI reporting regressions
@@ -84,11 +86,13 @@ jobs:
         # Other scenarios retain one job and their complete existing coverage.
         startup_arm: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.selection_scenario == 'startup' && '["original"]' || '["suite"]') }}
     env:
-      SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || 'full' }}
-      TESTED_SHA: ${{ github.sha }}
+      SELECTION_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_scenario || github.head_ref == 'release/v1.1.0-stabilization' && 'isolated' || 'full' }}
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       STARTUP_ARM: ${{ matrix.startup_arm }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify runner and pinned toolchain
         run: bash scripts/verify-ci-toolchain.sh
       - name: XCUITest

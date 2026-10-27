@@ -1,6 +1,16 @@
 # Verification — Macventory v1.1.0
 
-## Current documentation candidate — 26 October 2026
+## Stabilization status — 27 October 2026
+
+**Selection/Details remains blocked; release readiness is not established.** PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) preserves the documentation and stabilization history. Startup passed its single focused hosted case at `1fe3c150e2fba555c42d352d7986ee214dceae17`, [run 40405018837](https://github.com/vadimtanel/MacVentory/actions/runs/40405018837). The exact-identifier locator and validated row-coordinate corrections are test infrastructure changes, not demonstrated production selection repairs.
+
+At `b4c1902dc3ce5592f2b5bf80c5e811f2d015bb57`, [isolated run 40416962436](https://github.com/vadimtanel/MacVentory/actions/runs/40416962436) failed both focused cases at native selection. One earlier Example App interaction reached the correct binding/Details and Direct Uninstall review/cancel; the remaining execution-level/Management GUI contract was not completed. Native evidence shows provisional `[0]` during search end-editing, then `[]` on the same table without binding delivery. The clearing writer and production-versus-QA/XCTest/runtime classification remain unproven. A macOS 27 synthetic click succeeded under LLDB, with different search-responder behavior and no clearing stack; it does not establish macOS 26 production correctness.
+
+The existing PR [run 40424237147](https://github.com/vadimtanel/MacVentory/actions/runs/40424237147) is reused rather than duplicated. Its native prerequisite passed 222 tests plus three intentional live skips in each SwiftPM/Xcode run, all 16 CI regressions, app/test compilation and package/signature/ZIP/DMG/checksum/source-manifest validation. Its primary full suite executed all 17 cases: **15 passed, two failed, zero skipped**. Both failures are native selection; four assertion records include the two secondary absent-Details capture errors. The run checks GitHub's synthetic merge revision, not the PR head revision. Native success and the 15 other GUI passes do not establish release readiness.
+
+The current preparation adds only bounded QA notification stacks, failure capture that tolerates absent Details, and focused PR execution at the exact candidate SHA. It preserves all 17 primary test bodies, native gestures, assertions and timing bounds. Local application build, 225 registered synthetic tests/24 suites (three live skips), 16 CI regressions and the separate-process trace safety contract pass. UI source parsing passes; this Mac has Command Line Tools, so it cannot establish XCUITest compilation/execution. This preparation is not a production repair or a passing hosted candidate.
+
+## Historical documentation candidate — 26 October 2026
 
 Source metadata is **1.1.0 / build 108**, with configured macOS **13.0** minimum. Documentation preparation starts from clean `main` at `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. Version values are not incremented. v1.1.0 is upcoming; the owner will create the tag and publish the release separately.
 

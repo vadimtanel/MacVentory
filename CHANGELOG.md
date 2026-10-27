@@ -27,6 +27,7 @@ Version **1.1.0 / build 108** is prepared in source; no v1.1.0 tag or GitHub Rel
 - Bound vendor/Steam launches to the selected physical client/tool; restricted generic vendor discovery to embedded associations and strengthened executable fingerprints.
 - Preserved earlier management-step results during interactive verification, prevented verification of skipped/completed uninstall steps and disabled dismissal while verification is busy.
 - Fixed hosted diagnostic transport across processes and read-only runner sandbox boundaries; these corrections alone do not establish resolution of the original GUI selection regression.
+- Corrected long-identifier XCTest queries and native row-coordinate delivery. Failure evidence tolerates absent Details; opt-in native notification stacks retain selection-transition callers. Stabilization PR updates run the focused pair at their exact head SHA. The native selection rollback remains unresolved; these test/CI corrections are not a production selection-fix claim.
 
 ### Safety and Security
 

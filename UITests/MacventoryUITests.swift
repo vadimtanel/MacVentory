@@ -444,10 +444,16 @@ final class MacventoryUITests: XCTestCase {
         let details = app.descendants(matching: .any).matching(identifier: "inventory.details").firstMatch
         let actions = details.descendants(matching: .any).matching(identifier: "inventory.details.actions").firstMatch
         let button = app.buttons["inventory.uninstall"]
+        // Failure capture must tolerate the missing Details that caused the
+        // original assertion; querying its frame would create a second failure.
+        func frame(_ element: XCUIElement) -> String { element.exists ? "\(element.frame)" : "absent" }
+        let detailsState = details.exists ?
+            "details=\(details.frame) metadata=\(frame(details.scrollViews["inventory.details.scroll"])) " +
+            "footer=\(frame(actions)) footerValue=\(actions.exists ? String(describing: actions.value) : "absent")" : "details=absent"
+        let buttonState = button.exists ?
+            "button=\(button.frame) enabled=\(button.isEnabled) hittable=\(button.isHittable)" : "button=absent"
         let evidence = XCTAttachment(string: "phase=\(phase) state=\(app.state.rawValue) " +
-            "window=\(app.windows.firstMatch.frame) details=\(details.frame) metadata=\(details.scrollViews["inventory.details.scroll"].frame) " +
-            "footer=\(actions.frame) footerValue=\(String(describing: actions.value)) " +
-            "button=\(button.frame) enabled=\(button.isEnabled) hittable=\(button.isHittable)\n" + app.debugDescription)
+            "window=\(app.windows.firstMatch.frame) \(detailsState) \(buttonState)\n" + app.debugDescription)
         evidence.name = phase + " — Details geometry and accessibility"
         evidence.lifetime = .keepAlways
         add(evidence)

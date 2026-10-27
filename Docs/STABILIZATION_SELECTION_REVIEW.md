@@ -1,6 +1,18 @@
 # v1.1.0 stabilization: documentation audit and selection evidence
 
-26 October 2026, Asia/Jerusalem. **Local review checkpoint; no new commit, push, PR, dispatch, merge, tag or release.** Proposed message: `test(ui): isolate selection stages and make GUI CI fail explicitly`.
+## Current investigation — 27 October 2026
+
+PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) remains open against unchanged main `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. The latest starting head is `b4c1902dc3ce5592f2b5bf80c5e811f2d015bb57`. The original documentation commit and the archived seven-file Gate A2 snapshot are preserved.
+
+The precise unresolved boundary is provisional native selection `[0]` reverting to `[]` on the same table during search end-editing, before a binding setter or committed selection notification. Search/filtering, exact row identity and mouse-down delivery are established. Neither a SwiftUI clearing writer, delegate veto nor production macOS 26 defect has been demonstrated. The local macOS 27 LLDB interaction succeeded, its mouse-handler recording gate did not activate, and no clearing stack was captured. It is inconclusive, not a repair.
+
+Existing full PR [run 40424237147](https://github.com/vadimtanel/MacVentory/actions/runs/40424237147) is reused; its two focused cases fail the same native-selection assertion. The next minimal observation extends the existing opt-in QA trace to selection-is-changing notifications and captures their caller stacks, committed-change stacks and search-end-editing stacks. No method/delegate is replaced and no selection/responder is set. Notification stacks alone must not be labeled a clearing caller. The failure attachment helper records absent Details without a secondary frame-query error. Automatic stabilization PR validation selects only the existing focused pair at the PR head; final full verification remains gated on focused success. No production selection change is justified by these observations yet.
+
+See [current verification status](VERIFICATION.md) and [CI behavior](CI.md). Historical reports below describe their named checkpoints and do not supersede current status.
+
+## Historical local review — 26 October 2026
+
+26 October 2026, Asia/Jerusalem. **Local review checkpoint at that date.** Proposed message: `test(ui): isolate selection stages and make GUI CI fail explicitly`.
 
 ## Branch preservation
 
