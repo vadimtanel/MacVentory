@@ -367,12 +367,35 @@ enum QASelectionDiagnostics {
             record["event"] = event; record["sequence"] = sequence; record["uptime"] = ProcessInfo.processInfo.systemUptime
             record["firstResponder"] = Self.identity(window?.firstResponder)
             if let editor = window?.firstResponder as? NSTextView { record["fieldEditor"] = editor.isFieldEditor; record["editorDelegateClass"] = editor.delegate.map { String(describing: type(of: $0)) } ?? "nil" }
+            // AppKit tracking can consume events without another sendEvent/local
+            // monitor callback. Observe its current input and the actual cursor;
+            // never move it, finish editing, or change native selection here.
+            let pointer = window.map { $0.convertPoint(fromScreen: NSEvent.mouseLocation) }
+            record["pointerOnScreen"] = NSStringFromPoint(NSEvent.mouseLocation)
+            record["pressedMouseButtons"] = NSEvent.pressedMouseButtons
+            var trackingPoint: NSPoint?
+            if let current = NSApp?.currentEvent {
+                record["currentEventType"] = current.type.rawValue
+                record["currentEventTimestamp"] = current.timestamp
+                record["currentEventModifiers"] = current.modifierFlags.rawValue
+                if [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .mouseMoved].contains(current.type),
+                   current.window === window {
+                    trackingPoint = current.locationInWindow
+                    record["currentEventPointInWindow"] = NSStringFromPoint(current.locationInWindow)
+                    if [.leftMouseDown, .leftMouseUp].contains(current.type) {
+                        record["currentEventClickCount"] = current.clickCount
+                        record["currentEventNumber"] = current.eventNumber
+                    }
+                }
+            }
             if let root = window?.contentView {
                 let tables = inventoryTables(root)
                 record["tables"] = tables.map { table -> [String: Any] in
                     var result: [String: Any] = ["identity": Self.identity(table), "selectedRows": Array(table.selectedRowIndexes),
                         "clickedRow": table.clickedRow, "rowCount": table.numberOfRows, "frame": NSStringFromRect(table.frame)]
                     if let point { result["rowAtPoint"] = table.row(at: table.convert(point, from: nil)) }
+                    if let pointer { result["rowAtPointer"] = table.row(at: table.convert(pointer, from: nil)) }
+                    if let trackingPoint { result["rowAtCurrentEvent"] = table.row(at: table.convert(trackingPoint, from: nil)) }
                     return result
                 }
                 if let point {

@@ -10,6 +10,10 @@ Existing full PR [run 40424237147](https://github.com/vadimtanel/MacVentory/acti
 
 See [current verification status](VERIFICATION.md) and [CI behavior](CI.md). Historical reports below describe their named checkpoints and do not supersede current status.
 
+The first bounded follow-up, `386f456863c55c444e827e6e86eb4fc25914a28c`, [focused PR run 40427009388](https://github.com/vadimtanel/MacVentory/actions/runs/40427009388), passes native builds/units/packages but fails both GUI cases on Interactive Vendor Example after successful Example App binding/Details selection. The extra failure-capture errors are eliminated. The empty native selection-changing notification is posted by `NSTableView _postSelectionIsChangingAndMark:` from `NSTableView mouseDown: +2840`, via `NSOutlineView mouseDown:` and SwiftUI hosting event routing. Search end-editing occurs under that same tracking handler's `NSWindow _realMakeFirstResponder:` call. This is the empty-state notification's caller, not proof of the clearing instruction or delegate decision.
+
+The second bounded observation adds current native event type/position/modifiers, actual cursor position, pressed-button state and their native row hit results to the existing private trace. It tests whether tracking input differs from the pre-delivery click; no pointer movement, selection setter, focus change, new test or timeout is introduced. A normal production macOS 26 reproduction remains unavailable and the responsible layer remains unresolved.
+
 ## Historical local review — 26 October 2026
 
 26 October 2026, Asia/Jerusalem. **Local review checkpoint at that date.** Proposed message: `test(ui): isolate selection stages and make GUI CI fail explicitly`.
