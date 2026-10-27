@@ -220,8 +220,13 @@ struct InventoryView: View {
     }
     private var table: some View {
         Group {
+            #if QA_SELECTION_LEGACY_TABLE
+            // Temporary compile-time comparison on the affected runtime only.
+            legacyTable
+            #else
             if #available(macOS 14, *) { CustomizableInventoryTable(rows: rows, selection: inventorySelection, sortOrder: tableSort) }
             else { legacyTable }
+            #endif
         }
         .onAppear {
             QAStartupDiagnostics.record("inventoryView.appeared")

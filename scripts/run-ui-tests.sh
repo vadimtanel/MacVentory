@@ -30,6 +30,7 @@ set +e
 xcodebuild -project Macventory.xcodeproj -scheme Macventory \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
   -resultBundlePath "$result_bundle" "${filters[@]}" -parallel-testing-enabled NO \
+  SWIFT_ACTIVE_COMPILATION_CONDITIONS='DEBUG QA_SELECTION_LEGACY_TABLE' \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= test \
   2>&1 | tee build/verification/xcode-ui-tests.log
 results=("${PIPESTATUS[@]}")
