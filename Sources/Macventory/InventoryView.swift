@@ -7,17 +7,51 @@ private struct InventorySettingsPresentation: Identifiable {
     let tab: Int
 }
 
-private struct InventorySearchPresentation: ViewModifier {
+/// An ordinary AppKit search editor keeps search presentation out of the
+/// SwiftUI searchable responder transition while the native Table tracks a click.
+struct InventorySearchField: NSViewRepresentable {
     @Binding var text: String
-    let enabled: Bool
 
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if enabled {
-            content.searchable(text: $text, prompt: "Search software, identifiers, paths…")
-        } else {
-            content
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.identifier = NSUserInterfaceItemIdentifier("inventory.search")
+        field.setAccessibilityIdentifier("inventory.search")
+        field.setAccessibilityLabel("Search software")
+        field.placeholderString = "Search software, identifiers, paths…"
+        field.sendsWholeSearchString = false
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.searchChanged(_:))
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        // Avoid resetting the editor/caret during updates from its own action.
+        if field.stringValue != text { field.stringValue = text }
+        field.isEnabled = context.environment.isEnabled
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+        @objc func searchChanged(_ sender: NSSearchField) {
+            if text.wrappedValue != sender.stringValue { text.wrappedValue = sender.stringValue }
         }
+    }
+
+    /// Invoked only by the person's Find Software command, never by row input.
+    static func focus(in window: NSWindow?) {
+        func find(_ view: NSView) -> NSSearchField? {
+            if let field = view as? NSSearchField, field.identifier?.rawValue == "inventory.search" { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let root = window?.contentView?.superview, let field = find(root), field.isEnabled else { return }
+        window?.makeFirstResponder(field)
+        field.selectText(nil)
     }
 }
 
@@ -94,9 +128,6 @@ struct InventoryView: View {
                     }
             }
         }
-        // Keep search presentation owned by the stable navigation container as
-        // the inventory replaces its table/details layout during selection.
-        .modifier(InventorySearchPresentation(text: $search, enabled: !navigation.contains("leftovers")))
         .background(NativeControlHelp().frame(width: 0, height: 0))
         .sheet(item: $settingsPresentation) { presentation in
             SettingsView(onClose: { settingsPresentation = nil }, initialTab: presentation.tab).id(presentation.id)
@@ -223,6 +254,10 @@ struct InventoryView: View {
             Button { showDetails.toggle() } label: { Label("Details", systemImage: "sidebar.right") }.accessibilityIdentifier("inventory.toggleDetails").controlHelp(showDetails ? "Hide Details" : "Show Details").accessibilityLabel(showDetails ? "Hide Details" : "Show Details")
             if model.scanning { Button("Cancel") { model.cancel() }.accessibilityIdentifier("inventory.cancel").controlHelp("Cancel Scan") }
             else { Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.accessibilityIdentifier("inventory.refresh").controlHelp("Refresh Inventory").accessibilityLabel("Refresh Inventory") }
+        }
+        ToolbarItem {
+            InventorySearchField(text: $search).frame(width: 280)
+                .help("Filter the current inventory using a name, identifier or path")
         }
     }
 
