@@ -1,5 +1,7 @@
 # Missing inventory window: startup investigation and stabilization gates
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 26 October 2026. Local, uncommitted observations/test patch on `release/v1.1.0-stabilization`, based on `343ac0f2f8202d2ad81c3df60ab0dc0b24767fe3`. No new commit, push or hosted dispatch is authorized by this report. All 17 primary GUI cases, including the selection regression, remain required and unchanged in scope.
 
 ## Established boundary

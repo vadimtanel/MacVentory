@@ -19,7 +19,7 @@ Combined actions validate all selected targets, perform the process action and v
 
 ## Current source-specific removal support
 
-These are the highest implemented levels for eligible installations, not automatic permissions for a whole source. Every real destructive route below remains unverified; production adapter tests inject fake effects and isolated fixtures.
+These are the highest implemented levels for eligible installations, not automatic permissions for a whole source. v1.1.0 is released with passing native/GUI CI and completed manual macOS VM testing, as confirmed by the maintainer. Automated adapter tests use fake effects and isolated fixtures; the VM confirmation does not supply a provider-by-provider destructive test matrix. See [verification](VERIFICATION.md) for the recorded scope.
 
 | Source | Eligible mechanism | Limits and verification |
 |---|---|---|
@@ -30,7 +30,7 @@ These are the highest implemented levels for eligible installations, not automat
 | PKG Installers | Interactive trusted embedded vendor uninstaller first; otherwise Direct bundle-only Trash when independently eligible | Receipts alone cannot authorize payload deletion. Matching receipt claim and complete ownership checks are required for bundle fallback. Verify original bundle absence; receipt deliberately remains historical. No `pkgutil --forget` or receipt-wide deletion. |
 | Mac App Store | Direct limited native bundle Trash after signing/receipt, ownership, path and service checks | Local receipt implies source, not purchase authentication. Protected/ineligible bundles use guidance/blocking. Verify original path absent; purchases/account/user data remain outside scope. |
 | Direct / Unmanaged | Interactive trusted embedded vendor tool first; otherwise independently eligible Direct bundle Trash | Standard Applications roots and supported narrowly configured user-owned roots; strict identity/permissions/volume/protection/process/ownership checks. No complete external-component uninstall claim. |
-| Steam | Interactive `steam://uninstall/<AppID>` in the exact verified signed client | Requires unique exact App ID/library evidence. User completes Steam confirmation. Verify payload, selected manifest and every registered library/index; disconnected/retained state stays unknown/partial. Real macOS handoff and current primary protocol revalidation remain pending. |
+| Steam | Interactive `steam://uninstall/<AppID>` in the exact verified signed client | Requires unique exact App ID/library evidence. User completes Steam confirmation. Verify payload, selected manifest and every registered library/index; disconnected/retained state stays unknown/partial. Compatibility depends on the installed Steam client/protocol; the release verification record does not itemize Steam completion coverage. |
 | Setapp | Guided removal in Setapp | No trustworthy supported exact-target integration established. Framework evidence does not authenticate subscription/registration; no deletion behind the manager. |
 | JetBrains Toolbox | Guided removal of the exact IDE/version/path in Toolbox | Recognized launcher association is inferred. No supported targeted macOS uninstall CLI/deep link established; no managed-directory deletion. |
 | Unknown / conflicting / protected | Blocked or specific guidance where justified | Refresh/resolve evidence rather than guessing an owner or operation. Health does not override protection. |
@@ -45,7 +45,7 @@ Native bundle removal uses `NSWorkspace.recycle`, requires the selected URL's re
 
 Vendor association requires valid Apple-anchored signatures, matching publisher team, an embedded association and fresh target/tool identity. Launch disables substitution by another running physical copy. Publisher association does not prove one-product scope; review the vendor tool's choices. Generic sibling/vendor-folder discovery and universal silent vendor scripts are unsupported.
 
-The MacPorts helper accepts only exact typed requests, authenticates both XPC peers and checks administrator authority before preflight and again before the privileged effect. Background-helper availability alone grants no removal authority. Approval is persistent and revocable in Login Items; no uninstall is queued while approval is pending, and a new preview is required afterwards. Real signed deployment, authorization and helper lifecycle remain unverified. Installing/scanning Macventory does not register it.
+The MacPorts helper accepts only exact typed requests, authenticates both XPC peers and checks administrator authority before preflight and again before the privileged effect. Background-helper availability alone grants no removal authority. Approval is persistent and revocable in Login Items; no uninstall is queued while approval is pending, and a new preview is required afterwards. The published ad-hoc build cannot enable this privileged route. Installing/scanning Macventory does not register it; the release test results do not certify a separately signed helper deployment.
 
 ## App data and Leftover Data
 
@@ -59,7 +59,7 @@ Optional direct-child suggestions in Documents/Downloads/Desktop are off by defa
 
 ## Validation and limits
 
-No real installed software, process, user data or privileged helper is a QA target. `--ui-testing` and persistent QA bundles use isolated fixtures/simulation; `--demo` has fictional non-actionable records. Read-only live inventory tests do not establish removal safety. Actual native Trash/restoration, manager effects, vendor/Steam completion and signed-helper approval/deployment require separately authorized disposable environments. See [the verification plan](UNINSTALL_FOCUSED_VALIDATION.md). No bulk uninstall, automatic dependencies, zap, store GC, arbitrary shell operation or complete third-party data cleanup is implemented.
+Routine automated QA protects installed software and user data: `--ui-testing` and persistent QA bundles use isolated fixtures/simulation, while `--demo` has fictional non-actionable records. Read-only live inventory tests do not establish removal safety. Manual macOS VM testing for v1.1.0 is complete, as confirmed by the maintainer; see the [current verification record](VERIFICATION.md). Further destructive provider/helper tests require an authorized disposable environment; the [historical verification plan](UNINSTALL_FOCUSED_VALIDATION.md) describes the scenarios, not current release blockers. No bulk uninstall, automatic dependencies, zap, store GC, arbitrary shell operation or complete third-party data cleanup is implemented.
 
 ## Historical build notes — superseded by v1.1.0 above
 

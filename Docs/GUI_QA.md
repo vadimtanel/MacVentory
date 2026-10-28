@@ -1,6 +1,6 @@
 # Native GUI QA — Macventory 1.0.0
 
-**Historical GUI evidence.** Build-specific checks and retained screenshots below are not new v1.1.0 tests. Current implementation, hosted evidence and remaining limits are distinguished in [Verification](VERIFICATION.md); full CI must pass on the final commit before tagging. AX inspection is not full spoken VoiceOver or real removal verification.
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
 
 ## Build107 native synthetic checks
 

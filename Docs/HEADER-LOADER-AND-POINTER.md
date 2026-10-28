@@ -1,5 +1,7 @@
 # Header loader correction and pointer diagnostic — 24 October 2026
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Base revision: `4f3f34a51d935b2175d9a3c2d85bfa269226e7e4`. Changes are local and uncommitted. No corrected hosted run has executed. No production source, packaging, version/build, Xcode pin, uninstall safety or original GUI assertions changed.
 
 ## Confirmed loader cause and exact correction

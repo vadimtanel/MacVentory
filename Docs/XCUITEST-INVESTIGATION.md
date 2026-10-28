@@ -1,5 +1,7 @@
 # PR #1 XCUITest execution investigation — 24 October 2026
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Version 1.0.0/build102 and pinned Xcode 26.5 are unchanged. Corrections are local and uncommitted. No corrected cloud run has executed.
 
 ## Evidence reviewed

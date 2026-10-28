@@ -1,5 +1,7 @@
 # Hosted sandbox selection trace handoff correction
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Date: 2026-10-26. Base: `1f534fbfc774e5a42456570ec59f2e7a3671e32c` on `feature/unified-uninstall-and-inventory-health`.
 This four-file correction is local and uncommitted.
 

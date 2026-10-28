@@ -1,5 +1,7 @@
 # Focused validation and disposable-environment verification plan
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 25 October 2026 · branch `feature/unified-uninstall-and-inventory-health`
 
 **Recommendation: COMMIT READY for the focused follow-up; NOT RELEASE READY.** Simulation establishes application orchestration and verification contracts. It does not establish real uninstall correctness or signed-helper deployment safety.

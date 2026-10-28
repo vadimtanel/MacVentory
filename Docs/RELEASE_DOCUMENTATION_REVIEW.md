@@ -1,5 +1,7 @@
 # v1.1.0 documentation and release-preparation review
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Review date: **26 October 2026**, Asia/Jerusalem. Scope: main Macventory repository only. Starting branch/upstream: `main` / `origin/main`; starting local and advertised remote SHA: `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. The initial tracked/untracked working tree was clean. The remote was checked read-only; no fetch/rebase/reset was needed.
 
 Candidate metadata is already **1.1.0 / build 108**; configured minimum is macOS **13.0**. No version bump is part of this review. v1.1.0 is upcoming; the tag/release and four planned artifacts are owner-controlled later steps. Pushing the documentation commit requires separate approval.

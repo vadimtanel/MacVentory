@@ -1,5 +1,7 @@
 # Header proxy investigation — d93cf87, 24 October 2026
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 ## Confirmed new finding
 
 [PR run40041664648](https://github.com/vadimtanel/MacVentory/actions/runs/40041664648), macOS26.6.2/Xcode26.5/SDK26.5/Swift6.3.2, passes the native pipeline and9/10 GUI methods. The sorting method records one failed hittability precondition; the helper now correctly stops without a second click. This is not a passing GUI suite.

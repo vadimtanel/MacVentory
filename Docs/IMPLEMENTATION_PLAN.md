@@ -1,5 +1,7 @@
 # Macventory implementation plan — revised 2026-10-23
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 SPEC.md remains the authoritative product specification. The owner's revised authorization replaces full Xcode as an immediate dependency with Swift Package Manager, the installed Swift compiler/macOS SDK, native SwiftUI/AppKit, and a small app-bundling script. Architecture and all ten source categories are preserved. No further Apple authentication or Xcode downloads will be attempted.
 
 ## Architecture

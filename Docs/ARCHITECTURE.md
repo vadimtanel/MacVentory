@@ -40,10 +40,10 @@ UninstallPreparationService resolves one eligible strategy; UninstallLevels bind
 
 Interactive launch returns Waiting for User; independent verification preserves previous combined-step results. Manager exit zero alone is insufficient. Bundle-only removal verifies original-path absence, not every external component. App-data and Leftover Data actions have separate exact-path confirmation. Timeouts/cancellation do not guarantee rollback.
 
-MacPortsAuthorization and the helper validate exact version/prefix/payload fingerprints, both XPC peer identities and per-request OS administrator rights before preflight and the final effect. Trusted matching signing and explicit OS helper approval are required; pending approval queues nothing. Registration/lifecycle and actual privileged execution remain unverified.
+MacPortsAuthorization and the helper validate exact version/prefix/payload fingerprints, both XPC peer identities and per-request OS administrator rights before preflight and the final effect. Trusted matching signing and explicit OS helper approval are required; pending approval queues nothing. The released ad-hoc build cannot enable this privileged route; separate signed deployment/lifecycle verification is outside the automated fixture suite.
 
 ## Compatibility and evidence
 
 App/helper deployment is macOS 13.0; test hosts require macOS 14+ for Swift Testing. arm64 is primary. Intel, minimum-OS runtime and clean-machine Gatekeeper need separate evidence. Full Xcode validates project/framework/test integration beyond SwiftPM.
 
-See [current removal matrix](UNINSTALL.md), [discovery matrix](SOURCE_SUPPORT.md), [CI](CI.md) and [verification](VERIFICATION.md). Historical execution/audit reports preserve earlier snapshots. Production adapters are implemented, but synthetic effects and read-only live inspection do not establish real destructive behavior or signed-helper deployment.
+See [current removal matrix](UNINSTALL.md), [discovery matrix](SOURCE_SUPPORT.md), [CI](CI.md) and [verification](VERIFICATION.md). v1.1.0 is published with successful native/GUI CI, packaging/artifact validation and maintainer-confirmed manual macOS VM testing. Historical execution/audit reports preserve earlier snapshots. Synthetic effects and read-only inspection have narrower scope than real runtime testing; the [verification record](VERIFICATION.md) distinguishes those results and the shipped signing restrictions.

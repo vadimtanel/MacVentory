@@ -8,15 +8,22 @@ A free, native macOS application for understanding installed software: where it 
 
 ## Macventory v1.1.0 — Uninstall & Installation Health
 
-**v1.1.0 is upcoming; its GitHub Release and downloads have not been published.** This repository prepares version 1.1.0 / build 108. Use the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) for available downloads; [v1.0.0](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0) is the first published release.
+**v1.1.0 is available — released 27 October 2026 (build 108).** Download it from the [official GitHub Release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0) or install it with Homebrew.
 
-The planned v1.1.0 release contains an Apple Silicon DMG (recommended), ZIP alternative, SHA-256 checksum file and source archive. See [installation and expected filenames](Docs/INSTALLATION.md) and the [v1.1.0 changelog](CHANGELOG.md).
+| Download | Purpose |
+|---|---|
+| [Apple Silicon DMG](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.dmg) | Recommended drag-to-Applications installer |
+| [Apple Silicon ZIP](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.zip) | Alternative app archive |
+| [SHA-256 checksums](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.sha256) | Verify the downloaded files |
+| [Source archive](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-source.tar.gz) | Reviewed source inputs |
+
+See [installation instructions](Docs/INSTALLATION.md) and the [v1.1.0 changelog](CHANGELOG.md).
 
 [All Releases](https://github.com/vadimtanel/MacVentory/releases) · [Installation instructions](#installation)
 
 [Official repository](https://github.com/vadimtanel/MacVentory) · [Created by Vadim Tanel](https://www.linkedin.com/in/vadim-tanel/) · [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Apple Silicon · macOS 13.0 configured minimum · Upcoming: v1.1.0 / build 108**
+**Apple Silicon · macOS 13.0 configured minimum · Released: v1.1.0 / build 108**
 
 ![Actual Macventory app in Light Mode with fictional demonstration records](Docs/Screenshots/macventory-inventory-light.png)
 
@@ -99,14 +106,14 @@ brew update
 brew upgrade --cask vadimtanel/macventory/macventory
 ```
 
-Homebrew installs the version currently offered by the separate Tap. v1.1.0 becomes available there only after its stable GitHub Release is published and the Tap automation detects and validates it; synchronization may be delayed. See the [latest stable release](https://github.com/vadimtanel/MacVentory/releases/latest) and [Tap documentation](https://github.com/vadimtanel/homebrew-macventory) for availability.
+The official [Homebrew Tap](https://github.com/vadimtanel/homebrew-macventory/blob/main/Casks/macventory.rb) offers **1.1.0**, with the checksum of the published DMG (verified 28 October 2026). Run `brew update` before upgrading an existing installation.
 
 Homebrew is optional: direct [DMG and ZIP downloads](https://github.com/vadimtanel/MacVentory/releases) and the manual instructions below remain available. The application is currently ad-hoc signed and **not Apple-notarized**. Homebrew installation does not bypass Gatekeeper; review the [first-launch guidance](#first-launch-and-gatekeeper).
 
 ### Recommended DMG installation
 
-1. Open the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) and download its arm64 DMG and checksum file. v1.1.0 is not yet available.
-2. Verify the download, then open the DMG. The planned v1.1.0 filename is `Macventory-1.1.0-arm64.dmg`.
+1. Open the [v1.1.0 release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0) and download `Macventory-1.1.0-arm64.dmg` and its checksum file.
+2. Verify the download, then open the DMG.
 3. Drag Macventory.app onto the Applications shortcut.
 4. Eject the disk image.
 5. Launch Macventory from Applications or Spotlight.
@@ -117,8 +124,8 @@ The disk contains the complete app and a visual installation guide. No command-l
 
 ### Alternative ZIP installation
 
-1. Open the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) and download its arm64 ZIP and checksum file.
-2. Verify and extract the ZIP to obtain Macventory.app. The planned v1.1.0 filename is `Macventory-1.1.0-arm64.zip`; it is not yet available.
+1. Open the [v1.1.0 release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0) and download `Macventory-1.1.0-arm64.zip` and its checksum file.
+2. Verify and extract the ZIP to obtain Macventory.app.
 3. Move Macventory.app into Applications.
 4. Launch the application.
 
@@ -194,7 +201,7 @@ A root-owned MacPorts installation requires a matching signed app/helper and exp
 
 There is no bulk uninstall, force, zap, automatic dependency removal, store garbage collection or automatic data sweep. Failed operations never silently switch strategies. A started external operation cannot guarantee cancellation or rollback.
 
-**Real destructive provider execution remains unverified.** Tests invoke production adapters through fake effect boundaries and disposable fixtures; live inspection is read-only. Signed-helper deployment and full CI on the final documentation commit remain unverified. See the [current removal support and limits](Docs/UNINSTALL.md), [historical independent audit](Docs/UNINSTALL_FINAL_AUDIT.md) and [verification status](Docs/VERIFICATION.md).
+The released commit passed native/GUI CI, including the management workflows, and manual macOS VM testing is complete, as confirmed by the maintainer. Automated adapter tests use simulated effects and disposable fixtures. The published ad-hoc build cannot enable privileged MacPorts removal. See [current removal support and limits](Docs/UNINSTALL.md) and the [verification record](Docs/VERIFICATION.md) for the scope of each check.
 
 ## Application management and Leftover Data
 
@@ -258,7 +265,7 @@ python3 scripts/review-publication.py
 
 The build produces a native app with resources, license/NOTICE and an ad-hoc signature. A narrowly scoped MacPorts helper is bundled but is not activated by installation or scanning; its privileged route needs trusted matching signing and explicit OS approval. Packaging prepares ZIP, DMG, source archive and SHA-256 files under artifacts/ without committing or uploading anything.
 
-The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 26.5 because SDK27 lacks its SwiftUI macro plug-in. Its native SwiftPM fallback is deprecated upstream. Restricted environments may need `MACVENTORY_DISABLE_SWIFTPM_SANDBOX=1`; this changes compiler subprocess sandboxing only, not macOS protections. See [release preparation](Docs/RELEASING.md) for final CI and pending release gates.
+The inspected Swift 6.4 Command Line Tools setup builds with the installed SDK 26.5 because SDK27 lacks its SwiftUI macro plug-in. Its native SwiftPM fallback is deprecated upstream. Restricted environments may need `MACVENTORY_DISABLE_SWIFTPM_SANDBOX=1`; this changes compiler subprocess sandboxing only, not macOS protections. See the [release process](Docs/RELEASING.md) and [completed v1.1.0 verification](Docs/VERIFICATION.md).
 
 ## Troubleshooting
 
@@ -286,6 +293,8 @@ Redistributors must follow Apache 2.0's notice/license/change-marking requiremen
 
 ## Project status
 
-Version 1.1.0 / build 108 includes the merged unified uninstall and installation-health implementation, source-aware adapters, application management, separate Leftover Data review, settings transactions and isolated demo/QA modes. [Verification](Docs/VERIFICATION.md) distinguishes recorded local fixtures, hosted CI and unverified real effects.
+**v1.1.0 / build 108 is released.** It includes unified uninstall, installation health, source-aware adapters, application management, separate Leftover Data review, settings transactions and the fix for first-click selection after searching.
 
-The starting source commit passed hosted native build/test/package checks, but its overall run failed the GUI count/order and reporting gates; see [CI evidence](Docs/CI.md). The final documentation commit still requires its own complete hosted workflow before tagging. Full VoiceOver, minimum-OS execution, clean-machine Gatekeeper behavior, actual provider removal and signed-helper deployment remain unverified. Intel is optional. Documentation preparation does not establish **RELEASE READY**; see the [release checklist](Docs/RELEASING.md).
+The [release-commit CI run](https://github.com/vadimtanel/MacVentory/actions/runs/40535995628) passed native builds, unit tests, packaging, artifact validation and **all 17 primary GUI cases**, including count/order checks and independent diagnostics. Focused selection tests also passed. Manual testing in a macOS virtual machine is complete, as confirmed by the maintainer. See [verification and evidence](Docs/VERIFICATION.md).
+
+The published build is Apple Silicon and ad-hoc signed, without Apple notarization. Privileged MacPorts removal requires trusted matching app/helper signing and separate macOS authorization. macOS 13 is the configured minimum; minimum-OS runtime, Intel/universal distribution and full spoken VoiceOver are not certified by these results. See [installation](Docs/INSTALLATION.md) and [source-specific removal limits](Docs/UNINSTALL.md).

@@ -2,9 +2,9 @@
 
 Current discovery scope for **v1.1.0 / build 108** is listed below. Detection, installation health and removal eligibility are separate capabilities: a recognized source does not imply automatic uninstall support. See the [current removal matrix](UNINSTALL.md#current-source-specific-removal-support) and [verification status](VERIFICATION.md). Historical execution/audit reports retain their original test counts and branch state.
 
-All ten categories exist in the UI, plus Unknown / Ambiguous. A zero result, absent manager, unsupported layout and failed scan are distinct states. “Fixture verified” does not mean verified against a real installation.
+All ten categories exist in the UI, plus Unknown / Ambiguous. A zero result, absent manager, unsupported layout and failed scan are distinct states. v1.1.0 is released with passing CI and maintainer-confirmed manual macOS VM testing. The table retains provider-specific discovery evidence from the recorded development-machine audits; “absent here” refers to that audit machine, not the VM or release status. “Fixture verified” does not mean verified against a real installation. The [current verification record](VERIFICATION.md) distinguishes these scopes.
 
-| Source | Implementation / evidence | Actual verification and limits |
+| Source | Implementation / evidence | Recorded discovery evidence and implementation limits |
 |---|---|---|
 | Direct / Unmanaged | Bounded native bundle enumeration, canonical paths, bundle metadata | Real Mac comparison passed; exact DMG/ZIP/download provenance is unknown. System apps are hidden by default. Independent standalone Trash eligibility does not promote inferred source confidence; see uninstall boundaries. |
 | Mac App Store | Local receipt presence, explicitly inferred | Positive/negative fixtures; real scan returned no receipt-bearing apps. Receipt cryptography, purchase validity and account history are not verified. |

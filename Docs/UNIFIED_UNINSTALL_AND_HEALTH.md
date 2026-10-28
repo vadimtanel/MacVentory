@@ -1,5 +1,7 @@
 # Unified uninstall and inventory health — implementation and QA report
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 **Earlier-pass report:** [Uninstall execution levels](UNINSTALL_EXECUTION_LEVELS.md) supersedes this report’s source-removal limits and test totals. MacPorts, modern mutable Nix profiles, Steam handoff and limited PKG bundle removal now have production adapters.
 
 Branch: `feature/unified-uninstall-and-inventory-health`. Baseline: `22334cd`.

@@ -1,5 +1,7 @@
 # Git integration and proposed application commit
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Inspected 23 October 2026. Official repository: https://github.com/vadimtanel/MacVentory (public, default main). Local main, origin/main and advertised remote main are `55f7ea9febc821436aad73b14f86c3c4d92f42f8` (Initial commit). The sole tracked file is LICENSE; application work remains untracked. The existing origin fetch/push URL is `git@github.com:vadimtanel/MacVentory.git`. No configuration, index, refs or history was changed during this pass. No reconciliation merge is necessary at this inspected state.
 
 Local LICENSE and remote LICENSE are byte-identical, SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`. Official Apache text comparison matches after whitespace normalization; appendix placeholders are official template text. LICENSE was preserved. NOTICE carries project/creator/repository/LinkedIn attribution. Apache section4 notice-retention rules apply; retaining clickable UI profile links in forks is a courtesy request, not an additional license restriction.

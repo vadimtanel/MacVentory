@@ -1,8 +1,8 @@
 # Changelog
 
-## Macventory v1.1.0 — Uninstall & Installation Health (upcoming)
+## Macventory v1.1.0 — Uninstall & Installation Health — 27 October 2026
 
-Version **1.1.0 / build 108** is prepared in source; no v1.1.0 tag or GitHub Release has been published. These changes describe the implementation since the public [v1.0.0 tag](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0), not completed release validation.
+Version **1.1.0 / build 108** is [published](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0), with Apple Silicon DMG/ZIP, checksums and a source archive. The official Homebrew Tap also offers 1.1.0. These changes are relative to the public [v1.0.0 release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0).
 
 ### New Features
 
@@ -26,8 +26,8 @@ Version **1.1.0 / build 108** is prepared in source; no v1.1.0 tag or GitHub Rel
 - Corrected Nix profile-conflict detection, retained non-app cask artifact warnings and stale/historical reconciliation. Separate copies remain separate regardless of names/identifiers.
 - Bound vendor/Steam launches to the selected physical client/tool; restricted generic vendor discovery to embedded associations and strengthened executable fingerprints.
 - Preserved earlier management-step results during interactive verification, prevented verification of skipped/completed uninstall steps and disabled dismissal while verification is busy.
-- Fixed hosted diagnostic transport across processes and read-only runner sandbox boundaries; these corrections alone do not establish resolution of the original GUI selection regression.
-- Corrected long-identifier XCTest queries and native row-coordinate delivery. Failure evidence tolerates absent Details; opt-in native notification stacks retain selection-transition callers. Stabilization PR updates run the focused pair at their exact head SHA. The native selection rollback remains unresolved; these test/CI corrections are not a production selection-fix claim.
+- Fixed first-click inventory selection after searching on macOS 26 by replacing SwiftUI search presentation with a native search field. Selection and matching Details now pass the focused regression and full GUI suite; immediate filtering, Command-F, keyboard navigation, sorting, column customization, context menus and double-click review are retained.
+- Fixed hosted diagnostic transport, long-identifier XCTest queries, native row-coordinate delivery and failure reporting. CI checks actual test counts, order and outcomes and preserves evidence on failure.
 
 ### Safety and Security
 
@@ -36,13 +36,17 @@ Version **1.1.0 / build 108** is prepared in source; no v1.1.0 tag or GitHub Rel
 - Protected staged running cask bundles and the actual running Macventory copy; rechecked unrelated manager registrations and all registered Steam libraries when verifying results.
 - Failed operations never switch strategies or invoke force, zap, dependency removal, garbage collection, receipt forgetting or unreviewed cleanup.
 
+### Verification
+
+- [Full release-commit CI](https://github.com/vadimtanel/MacVentory/actions/runs/40535995628) passed at `54bb40270bf8309ce454cfb0cf73c80afed07ef9`: native builds/tests, packaging, artifact validation, all **17 primary GUI cases**, count/order checks, evidence export and independent diagnostics.
+- The [focused selection pair](https://github.com/vadimtanel/MacVentory/actions/runs/40526878294) and [full stabilization suite](https://github.com/vadimtanel/MacVentory/actions/runs/40529352261) passed at `ca618773dd333db2654c2d569ea782dc3a6e4784` on macOS 26.6.2.
+- Manual macOS VM testing is complete, as confirmed by the maintainer on 28 October 2026. See [verification](Docs/VERIFICATION.md) for evidence scope.
+
 ### Known Limitations
 
-- v1.1.0 remains unpublished. Complete hosted CI, including all 16 primary GUI cases and independent diagnostics, must pass on the final documentation/source commit before tagging; native-only or earlier-commit success is insufficient.
-- Real provider removal, native Finder Trash, vendor/Steam completion and signed-helper deployment/lifecycle remain unverified. Synthetic tests establish orchestration/validation contracts, not destructive safety.
 - Setapp and Toolbox use guidance where trustworthy targeted integration is unavailable. PKG receipts cannot be inverted into uninstall scripts; bundle-only removal may leave external components/data.
 - Normal Homebrew uninstall can fail when an expected app is missing; no forced reconciliation is attempted. Nix direct support is limited to named manifest-v3 elements in supported mutable current-user profiles, Nix 2.28–2.35.
-- Distribution is arm64 and ad-hoc signed, without Developer ID/notarization. macOS 13.0 is configured, not runtime-validated; Intel/universal, clean-machine Gatekeeper and full VoiceOver are unverified. Privileged MacPorts removal is unavailable with ad-hoc signing.
+- Distribution is arm64 and ad-hoc signed, without Developer ID/notarization. macOS 13.0 is configured; minimum-OS runtime, Intel/universal distribution and full spoken VoiceOver are not certified by the release checks. Gatekeeper may require explicit user approval. Privileged MacPorts removal is unavailable with ad-hoc signing.
 
 See [current uninstall support](Docs/UNINSTALL.md), [verification](Docs/VERIFICATION.md) and [release process](Docs/RELEASING.md).
 

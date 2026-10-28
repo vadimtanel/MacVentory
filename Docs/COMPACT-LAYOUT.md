@@ -1,5 +1,7 @@
 # Compact-display investigation — PR #1, 24 October 2026
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 Baseline081166026965cdb975d2907ed142c0fae1e61f84, Macventory1.0.0/build102. Corrections are local/uncommitted. Xcode26.5 and workflows remain unchanged. Corrected hosted GUI execution is pending approval to commit/push.
 
 ## Both runs reviewed

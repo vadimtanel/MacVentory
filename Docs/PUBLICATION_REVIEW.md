@@ -1,5 +1,7 @@
 # Pre-publication review
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 23 October 2026. Local review only; no files were uploaded. Exact proposed inputs and SHA-256 values are in ignored `build/publication-manifest.json`, generated with `scripts/review-publication.py`. Run again after any edit.
 
 ## Scope and findings

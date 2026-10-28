@@ -1,6 +1,6 @@
 # Macventory 1.0.0 checkpoint — 24 October 2026
 
-**Historical recovery log.** The entries below retain their original build/state/authorization claims. For the merged v1.1.0 / build 108 candidate, use [current verification](VERIFICATION.md), [release preparation](RELEASING.md) and [the documentation inventory](RELEASE_DOCUMENTATION_REVIEW.md). This log is not current branch/index state or proof of final-release validation.
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
 
 ## Build107 — permission explanations, folder scope and sidebar selection
 

@@ -1,5 +1,7 @@
 # Repository cleanup — Macventory 1.0.0 build 101
 
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
 ## Build 104 additions
 
 This correction pass adds one visually reviewed public screenshot, `macventory-leftover-data.png`, using only synthetic QA group names with no candidate selected or private path visible. The publication screenshot allowlist explicitly includes it. Other QA copies, fixture bundles, runtime reports and private Dark Mode evidence remain under ignored build paths. No real application/user data/cache was cleaned. Existing staged source additions were preserved; this pass performed no index, history or remote changes. Original branding/license/NOTICE assets remain unchanged.

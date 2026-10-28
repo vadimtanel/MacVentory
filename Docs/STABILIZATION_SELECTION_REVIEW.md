@@ -1,6 +1,8 @@
 # v1.1.0 stabilization: documentation audit and selection evidence
 
-## Current investigation — 27 October 2026
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
+
+## Historical investigation checkpoint — 27 October 2026
 
 PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) remains open against unchanged main `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. The latest starting head is `b4c1902dc3ce5592f2b5bf80c5e811f2d015bb57`. The original documentation commit and the archived seven-file Gate A2 snapshot are preserved.
 

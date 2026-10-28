@@ -1,6 +1,35 @@
 # Verification — Macventory v1.1.0
 
-## Stabilization status — 27 October 2026
+## Released v1.1.0 — status checked 28 October 2026
+
+**v1.1.0 / build 108 was published on 27 October 2026.** The [GitHub Release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0) is stable and contains the arm64 DMG, ZIP, checksum file and reviewed source archive. The tag identifies `54bb40270bf8309ce454cfb0cf73c80afed07ef9`, the merged release commit. The official [Homebrew Cask](https://github.com/vadimtanel/homebrew-macventory/blob/main/Casks/macventory.rb) offers 1.1.0 and matches the published DMG checksum.
+
+The first-click Selection/Details regression is **fixed**. Native search replaces SwiftUI search presentation while preserving the customizable table, filtering, Command-F, keyboard navigation, context menus and primary actions. PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) was merged; the older blocked/open-PR statements below describe earlier candidates.
+
+| Evidence | Completed result |
+|---|---|
+| Release commit: [run 40535995628](https://github.com/vadimtanel/MacVentory/actions/runs/40535995628) at `54bb40270bf8309ce454cfb0cf73c80afed07ef9` | Both native and UI jobs passed. Native covered SwiftPM/Xcode builds and fixture tests, test-target compilation, packaging and artifact validation. All **17 primary GUI tests passed with zero failures**, followed by successful count/order verification, evidence export, header comparisons, pointer diagnostic and final reporting. |
+| Stabilization full suite: [run 40529352261](https://github.com/vadimtanel/MacVentory/actions/runs/40529352261) at `ca618773dd333db2654c2d569ea782dc3a6e4784` | **17 passed, 0 failed, 0 skipped** on arm64 macOS **26.6.2 / 25G83**, Xcode 26.5 / SDK 26.5. Native and independent diagnostics passed. Fixture suites registered 225 tests in 24 suites, including three intentional opt-in read-only live-test skips. |
+| Focused selection: [run 40526878294](https://github.com/vadimtanel/MacVentory/actions/runs/40526878294), same stabilization SHA | **2 passed, 0 failed, 0 skipped**: execution-level/interactive verification and search-selection/Details contract. |
+| Local native interaction, macOS 27.0.1 | Repeated search → one-click selection retained matching Details; Command-F, editing/clear, double-click, context menu, Tab/Return and column hide/reset passed with selection diagnostics disabled. |
+| Manual macOS VM testing | **Completed, as confirmed by the maintainer on 28 October 2026.** This records actual runtime testing separately from hosted automation. The confirmation does not itemize provider-by-provider destructive results or signed-helper lifecycle coverage, so no universal pass is assigned to those routes. |
+
+The main CI job logs were checked directly, including the Xcode terminal result reporting 17 executed GUI tests with zero failures. The earlier failed runs remain useful regression history; they are not outstanding CI failures for the released commit. This documentation correction does not claim a new CI run or rebuild of the published artifacts.
+
+## Shipped scope and compatibility
+
+- The published distribution is **Apple Silicon / arm64**, **ad-hoc signed** and **not Apple-notarized**. Gatekeeper may require the user's supported per-app approval; manual VM success does not guarantee every download/policy combination.
+- macOS **13.0** remains the configured deployment minimum. The recorded macOS 26/27 results do not certify macOS 13 runtime, Intel/universal distribution or full spoken VoiceOver.
+- Automated management tests use isolated fixtures and simulated effects. Manual VM testing is recorded above; source-specific mechanisms and restrictions remain in [Uninstall](UNINSTALL.md) and [source support](SOURCE_SUPPORT.md).
+- Privileged MacPorts removal requires trusted matching app/helper signing, OS helper approval and per-request administrator authorization. The default ad-hoc release cannot enable that route.
+
+Use [CI](CI.md) for the workflow contract, [installation](INSTALLATION.md) for available downloads, and [release process](RELEASING.md) for future releases. Release-specific evidence belongs to the immutable tag; later documentation updates do not move that tag or replace its source archive.
+
+## Historical pre-release investigation and documentation records
+
+**All material below is a dated record from before the successful stabilization and publication.** References to an upcoming release, failed/blocked checks, pending authorization, open PRs or an unvalidated candidate describe those earlier revisions only. They are superseded for current release status by the completed results above. Original counts, SHAs and observations are preserved.
+
+## Historical stabilization checkpoint — 27 October 2026
 
 **Selection/Details remains blocked; release readiness is not established.** PR [#4](https://github.com/vadimtanel/MacVentory/pull/4) preserves the documentation and stabilization history. Startup passed its single focused hosted case at `1fe3c150e2fba555c42d352d7986ee214dceae17`, [run 40405018837](https://github.com/vadimtanel/MacVentory/actions/runs/40405018837). The exact-identifier locator and validated row-coordinate corrections are test infrastructure changes, not demonstrated production selection repairs.
 

@@ -1,6 +1,6 @@
 # Inventory comparison — privacy-safe summary
 
-**Historical v1.0.0 read-only audit.** Counts/timings below describe that development-machine run, not a new scan of the v1.1.0 candidate. See [current verification](VERIFICATION.md) for release status. Read-only inventory accuracy is separate from uninstall safety.
+**Historical report.** v1.1.0 was released on 27 October 2026 with passing native/GUI CI. See [current verification](VERIFICATION.md) for completed checks and manual VM testing. Failed/pending checks, branch state and proposed next steps below apply only to the dated development pass.
 
 The current read-only development-machine audit reproduced 84 merged records:27 native bundles,55 Homebrew formula names/56 kegs,7 casks and 3 overlapping PKG discoveries. The default UI hid one system record, giving83 shown. Independent validation passed 476 checks, including paths, bundle/package versions, physical identity, all reported logical footprints and receipt timestamps.25 Spotlight usage observations were available outside the restricted CLI context.
 

@@ -2,6 +2,12 @@
 
 Current metadata: **1.1.0 / build 108**. Workflows are implemented and have hosted execution evidence; the historical repair report below describes an earlier build and must not be read as current branch, authorization or CI status.
 
+## Completed release CI — 27 October 2026
+
+The [release-commit run 40535995628](https://github.com/vadimtanel/MacVentory/actions/runs/40535995628) passed at tagged commit `54bb40270bf8309ce454cfb0cf73c80afed07ef9`. Both native and UI jobs succeeded: builds, unit tests, packaging/artifact validation, **17 primary GUI tests with zero failures**, count/order verification, xcresult export, header comparisons, independent pointer diagnostics and final reporting.
+
+The [full stabilization run 40529352261](https://github.com/vadimtanel/MacVentory/actions/runs/40529352261) also passed **17/17, zero skipped**, and the [focused pair 40526878294](https://github.com/vadimtanel/MacVentory/actions/runs/40526878294) passed **2/2** at `ca618773dd333db2654c2d569ea782dc3a6e4784` on macOS 26.6.2. The native search-field correction resolved first-click selection and matching Details. PR #4 is merged and v1.1.0 is published. See [verification](VERIFICATION.md) for manual VM testing and distribution limits.
+
 ## Current workflow contract
 
 [Build and test Macventory](../.github/workflows/ci.yml) runs on push, pull request and manual dispatch. Both jobs use standard `macos-26` arm64 and pin `DEVELOPER_DIR=/Applications/Xcode_26.5.app/Contents/Developer`. The toolchain script verifies actual architecture, OS, Xcode, Swift and SDK; a missing pin fails rather than silently selecting a default. Opt-in read-only live integrations are disabled (`MACVENTORY_LIVE_TESTS=0`). Signing is ad hoc with no Apple credentials/notarization.
@@ -21,7 +27,7 @@ Pushes to `release/v1.1.0-stabilization` are excluded from the push trigger to a
 
 The stabilization suite retains all **16 original** primary `MacventoryUITests` methods plus `testSearchSelectionAndDetailsContract` (**17 total**). `isolated` requests the original failing execution-level case and the new selection-only regression; `full` requires all 17. `scripts/verify-ui-selection-run.py` checks actual starts/passes, missing/failed/skipped/repeated cases and exactly one successful Xcode terminal marker against an explicit coverage list, then verifies the source still contains that list. Inspect `selection-scenario.txt`, `tested-head.txt`, `gui-sequence.json`, raw exit status and xcresults for agreement with the requested SHA/scenario. Diagnostic-class methods are separate.
 
-The primary GUI step has **no `continue-on-error`**. `scripts/run-ui-tests.sh` preserves the actual Xcode and log-writer exit codes and fails on missing/skipped/failed cases even if the process exits zero. Evidence, sequence verification, independent diagnostics and final reporting use `always()` where appropriate. Further desktop diagnostics run only after the primary Xcode execution finalized normally with a result bundle; interrupted attempts cannot authorize another desktop test. Final reporting also requires successful xcresult export and, for `full`, both header/pointer diagnostic steps. A native-only success does not establish full CI. [Run 40416962436](https://github.com/vadimtanel/MacVentory/actions/runs/40416962436) failed both focused selection cases at native selection, with evidence export/upload retained; it is not a passing Selection/Details result.
+The primary GUI step has **no `continue-on-error`**. `scripts/run-ui-tests.sh` preserves the actual Xcode and log-writer exit codes and fails on missing/skipped/failed cases even if the process exits zero. Evidence, sequence verification, independent diagnostics and final reporting use `always()` where appropriate. Further desktop diagnostics run only after the primary Xcode execution finalized normally with a result bundle; interrupted attempts cannot authorize another desktop test. Final reporting also requires successful xcresult export and, for `full`, both header/pointer diagnostic steps. A native-only success does not establish full CI. The completed release runs above passed both jobs and all required gates.
 
 The runner's Xcode supplies `xcresulttool`: the workflow exports primary summary, test tree, activities and attachments on finalized success **or failure**, alongside the intact xcresult. An individual export failure still attempts the remaining exports and fails the evidence step. QA-only selection traces additionally capture native changing/committed notifications and search-end-editing caller stacks; these observations do not identify a clearing writer unless a recorded mutation actually supports that conclusion. Missing Details is recorded as absent during failure capture, preserving the original assertion rather than producing a second geometry-query exception. Synthetic Python regressions validate process exit propagation, coverage, SHA/scenario/arm agreement, continued evidence collection and final failure reporting without starting Xcode/apps.
 
@@ -31,13 +37,15 @@ The runner's Xcode supplies `xcresulttool`: the workflow exports primary summary
 
 The manual [packaging workflow](../.github/workflows/package.yml) builds/tests/packages and validates artifacts but does not run the full Xcode/GUI sequence. It cannot replace the full workflow. Neither workflow creates a Git tag/GitHub Release or updates the separate Tap.
 
-## Evidence for documentation preparation — 26 October 2026
+## Historical evidence for documentation preparation — 26 October 2026
+
+**Superseded checkpoint.** The failures and proposed next steps below belong to earlier revisions. They do not describe the released v1.1.0 commit or current PR status.
 
 The starting `main` SHA is `a5a66efcaf2f1b06c3f32bb104e6125239f831c9`. [Push run 40309598774](https://github.com/vadimtanel/MacVentory/actions/runs/40309598774), attempt 1, completed with **failure**. The native job (`121527167267`) passed, including hosted Xcode units, packaging and artifact validation. The UI job (`121529874468`) failed its actual-count/order verification and final outcome reporting. GitHub's step summaries list the primary XCUITest step and both header diagnostics as successful, but that does not override the failed sequence gate or establish all 16 cases passed. Raw logs/xcresults still require inspection to explain the mismatch; no underlying selection fix/failure is inferred from summaries alone. This is a dated observation, not a live status badge.
 
 Subsequent evidence: the preserved documentation commit `3c99886e9fe2f625279e9fe75aab83dc9274e0c1` already exists on `release/v1.1.0-stabilization`. Its [push run 40316125739](https://github.com/vadimtanel/MacVentory/actions/runs/40316125739) also failed: 16 primary cases executed, 15 passed and the same execution-level case failed. Raw trace/controller/startup records were inspected in this stabilization review. The local patch has no hosted validation; after separate commit/push/dispatch approval, require focused success before one full run on the exact final SHA. See [the stabilization evidence and limits](STABILIZATION_SELECTION_REVIEW.md), [Verification](VERIFICATION.md) and [release sequence](RELEASING.md).
 
-Real provider effects, native Trash, signed-helper deployment, macOS 13 runtime, full VoiceOver and clean-machine Gatekeeper remain separate unverified areas. Default ad-hoc signing is intentional; Developer ID/notarization are not supplied by these jobs.
+At this historical checkpoint, real provider effects, native Trash, signed-helper deployment, macOS 13 runtime, full VoiceOver and clean-machine Gatekeeper were outside the recorded checks. See the current [verification summary](VERIFICATION.md) for subsequent CI and maintainer-confirmed VM testing. Default ad-hoc signing is intentional; Developer ID/notarization are not supplied by these jobs.
 
 ## Historical cloud Xcode repair report — 24 October 2026
 

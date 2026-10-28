@@ -1,6 +1,6 @@
 # Installing Macventory 1.1.0
 
-**v1.1.0 is upcoming and has no published downloads yet.** Obtain available builds from the [latest published release](https://github.com/vadimtanel/MacVentory/releases/latest) or [all releases](https://github.com/vadimtanel/MacVentory/releases). [v1.0.0](https://github.com/vadimtanel/MacVentory/releases/tag/v1.0.0) is the first published release. Instructions below apply to the matching published version; v1.1.0 filenames describe planned assets.
+**v1.1.0 / build 108 was released on 27 October 2026.** Download the files below from the [official v1.1.0 release](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0), or install through the official Homebrew Tap. [All releases](https://github.com/vadimtanel/MacVentory/releases) includes earlier versions.
 
 ## Compatibility
 
@@ -10,24 +10,24 @@
 - Intel/universal binaries and Intel runtime support are not advertised as verified release targets.
 - End-user Macs do not need SwiftPM, Xcode or development files. Tests require a macOS 14+ host; full Xcode is needed for Xcode/XCUITest development checks.
 
-## Expected v1.1.0 assets
+## Published v1.1.0 assets
 
-After publication, find these on the [v1.1.0 release page](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0). That upcoming destination may return 404 until publication.
+All four files are available on the [v1.1.0 release page](https://github.com/vadimtanel/MacVentory/releases/tag/v1.1.0):
 
 | Filename | Purpose |
 |---|---|
-| `Macventory-1.1.0-arm64.dmg` | Recommended visual drag-to-Applications installer |
-| `Macventory-1.1.0-arm64.zip` | Alternative self-contained app bundle |
-| `Macventory-1.1.0-arm64.sha256` | SHA-256 entries for DMG, ZIP and source archive |
-| `Macventory-1.1.0-source.tar.gz` | Reviewed source inputs; not an installable app |
+| [Macventory-1.1.0-arm64.dmg](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.dmg) | Recommended visual drag-to-Applications installer |
+| [Macventory-1.1.0-arm64.zip](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.zip) | Alternative self-contained app bundle |
+| [Macventory-1.1.0-arm64.sha256](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-arm64.sha256) | SHA-256 entries for DMG, ZIP and source archive |
+| [Macventory-1.1.0-source.tar.gz](https://github.com/vadimtanel/MacVentory/releases/download/v1.1.0/Macventory-1.1.0-source.tar.gz) | Reviewed source inputs; not an installable app |
 
-Use artifacts and checksums from the same release. This candidate's app metadata is **1.1.0 / build 108**.
+Use artifacts and checksums from the same release. The released app metadata is **1.1.0 / build 108**.
 
 ## DMG installation
 
 1. Download the arm64 DMG and checksum file from the same official published release.
 2. [Verify the checksum](#sha-256-verification) before opening the image.
-3. Open the DMG (`Macventory-1.1.0-arm64.dmg` once published).
+3. Open the DMG (`Macventory-1.1.0-arm64.dmg`).
 4. Drag **Macventory.app** onto the **Applications** shortcut.
 5. Eject the image and launch Macventory from Applications or Spotlight.
 
@@ -36,7 +36,7 @@ The compressed, read-only image contains the complete app, an Applications symli
 ## ZIP installation
 
 1. Download the arm64 ZIP and checksum file from the same official published release.
-2. Verify and extract the ZIP (`Macventory-1.1.0-arm64.zip` once published).
+2. Verify and extract the ZIP (`Macventory-1.1.0-arm64.zip`).
 3. Move **Macventory.app** into Applications, then launch it.
 
 Keep the whole app bundle intact. Copy it into Applications before use rather than running from the mounted image.
@@ -56,11 +56,11 @@ brew tap vadimtanel/macventory
 brew install --cask vadimtanel/macventory/macventory
 ```
 
-This installs the Tap's available version, not unpublished v1.1.0 assets. After a stable release is published, separate Tap automation must detect and validate it before offering the update. Synchronization can lag; consult the Tap documentation for availability. Homebrew does not make an ad-hoc signed app notarized or bypass Gatekeeper.
+The official [Cask](https://github.com/vadimtanel/homebrew-macventory/blob/main/Casks/macventory.rb) offers **1.1.0** and matches the published DMG checksum (verified 28 October 2026). Run `brew update` if local metadata still shows an older version. Homebrew does not make an ad-hoc signed app notarized or bypass Gatekeeper.
 
 ## Updating an existing installation
 
-Quit Macventory normally before replacing it. For a manual installation, verify the new release's DMG/ZIP and replace the existing app in Applications. Avoid retaining another copy that could cause confusion about which version is running. Launch the replacement and inspect **About Macventory**; the v1.1.0 candidate is build 108. Refresh inventory after updating. Replacement does not require clearing the cache or user data.
+Quit Macventory normally before replacing it. For a manual installation, verify the new release's DMG/ZIP and replace the existing app in Applications. Avoid retaining another copy that could cause confusion about which version is running. Launch the replacement and inspect **About Macventory**; v1.1.0 is build 108. Refresh inventory after updating. Replacement does not require clearing the cache or user data.
 
 For a Homebrew-managed installation:
 
@@ -74,7 +74,7 @@ Use the manager's update path for its registered installation. A missing-app war
 
 ## SHA-256 verification
 
-Download the checksum file from the same official release. An optional Terminal check for a single planned asset is:
+Download the checksum file from the same official release. An optional Terminal check for a single asset is:
 
 ```sh
 shasum -a 256 Macventory-1.1.0-arm64.dmg
@@ -98,11 +98,11 @@ Attempt to open the app and read the warning. If you independently trust the off
 
 | Symptom | Check |
 |---|---|
-| v1.1.0 page or asset is missing | It is not published yet. Use the latest published release page. |
-| Homebrew offers an older version | Run `brew update`, inspect `brew info`, and check Tap synchronization after publication. |
+| A download link fails | Use the official v1.1.0 release page above and select the matching asset. Check connectivity and retry. |
+| Homebrew offers an older version | Run `brew update`, inspect `brew info`, and check the official Cask version. |
 | About shows an older version | Quit normally and confirm you opened the replacement in Applications, rather than another copy or mounted image. |
 | Gatekeeper blocks launch | Read the actual warning and supported procedure above; signatures/checksums are different checks. Managed policy can prevent an exception. |
 | Unknown, missing apps or historical receipts | Refresh and inspect source evidence. Missing metadata or retained registration does not prove removal or authorize cleanup. |
 | Access denied | Review the named failed check and macOS privacy access yourself. Macventory cannot grant itself access. |
 
-See [verification](VERIFICATION.md), [source support](SOURCE_SUPPORT.md) and [uninstall limits](UNINSTALL.md). Earlier DMG/ZIP QA used project-owned temporary destinations rather than overwriting the owner's app. Clean downloaded/quarantined first launch, macOS 13 runtime, Intel execution and real provider removal remain unverified. Historical checks do not validate final v1.1.0 assets; follow the [release process](RELEASING.md).
+The released commit passed native/GUI CI and packaging/artifact validation. Manual macOS VM testing is complete, as confirmed by the maintainer. These checks do not certify every provider, macOS 13 runtime, Intel execution or every Gatekeeper policy. See [verification](VERIFICATION.md), [source support](SOURCE_SUPPORT.md), [uninstall limits](UNINSTALL.md) and the [release process](RELEASING.md).
